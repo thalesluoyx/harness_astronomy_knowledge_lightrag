@@ -1,0 +1,993 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>🌌 LightRAG 天文知识库构建监控看板</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+  <style>
+    /* ── Reset & Variables ───────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:           #070a13;
+      --surface:      #0e1424;
+      --surface-card: #131b2e;
+      --surface-alt:  #1a243c;
+      --border:       #1e293b;
+      --border-glow:  rgba(56, 189, 248, 0.25);
+      
+      --text:         #f1f5f9;
+      --text-muted:   #94a3b8;
+      --text-dim:     #64748b;
+      
+      --cyan:         #38bdf8;
+      --purple:       #a855f7;
+      --blue:         #3b82f6;
+      --green:        #10b981;
+      --amber:        #f59e0b;
+      --red:          #ef4444;
+
+      --radius:       10px;
+      --radius-sm:    6px;
+      --font:         'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      --mono:         'JetBrains Mono', monospace;
+    }
+
+    body {
+      background: var(--bg);
+      background-image: 
+        radial-gradient(ellipse 80% 50% at 50% -20%, rgba(56, 189, 248, 0.08), transparent),
+        radial-gradient(ellipse 60% 40% at 90% 80%, rgba(168, 85, 247, 0.06), transparent);
+      color: var(--text);
+      font-family: var(--font);
+      font-size: 14px;
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
+
+    /* ── Header ─────────────────────────────────────────────── */
+    header {
+      background: rgba(14, 20, 36, 0.85);
+      backdrop-filter: blur(12px);
+      border-bottom: 1px solid var(--border);
+      padding: 14px 28px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+    }
+    .header-left {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+    .header-logo {
+      font-size: 1.6rem;
+      line-height: 1;
+      filter: drop-shadow(0 0 10px rgba(56, 189, 248, 0.6));
+    }
+    .header-titles h1 {
+      font-size: 1.15rem;
+      font-weight: 700;
+      letter-spacing: -0.3px;
+      background: linear-gradient(135deg, #f1f5f9 0%, #38bdf8 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    .header-titles p {
+      font-size: 0.76rem;
+      color: var(--text-muted);
+      margin-top: 1px;
+    }
+    .header-right {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+    .live-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 10px;
+      background: rgba(16, 185, 129, 0.12);
+      border: 1px solid rgba(16, 185, 129, 0.3);
+      border-radius: 20px;
+      font-size: 0.72rem;
+      font-weight: 600;
+      color: var(--green);
+    }
+    .live-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--green);
+      animation: pulse 1.8s infinite;
+    }
+    .live-badge.paused {
+      background: rgba(245, 158, 11, 0.12);
+      border-color: rgba(245, 158, 11, 0.3);
+      color: var(--amber);
+    }
+    .live-badge.paused .live-dot {
+      background: var(--amber);
+    }
+    .live-badge.offline {
+      background: rgba(239, 68, 68, 0.12);
+      border-color: rgba(239, 68, 68, 0.3);
+      color: var(--red);
+    }
+    .live-badge.offline .live-dot {
+      background: var(--red);
+      animation: none;
+    }
+    @keyframes pulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:.35;transform:scale(0.85)} }
+
+    /* ── Main Container ─────────────────────────────────────── */
+    main {
+      max-width: 1440px;
+      margin: 0 auto;
+      padding: 24px 28px 40px;
+      display: flex;
+      flex-direction: column;
+      gap: 22px;
+    }
+
+    /* ── Metric Cards Grid ─────────────────────────────────── */
+    .metrics-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: 16px;
+    }
+    .metric-card {
+      background: var(--surface-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 18px;
+      display: flex;
+      flex-direction: column;
+      position: relative;
+      overflow: hidden;
+      transition: transform .2s ease, border-color .2s ease;
+    }
+    .metric-card:hover {
+      border-color: rgba(56, 189, 248, 0.4);
+      transform: translateY(-2px);
+    }
+    .metric-card.hero {
+      grid-column: span 2;
+    }
+    @media (max-width: 1024px) {
+      .metric-card.hero { grid-column: span 1; }
+    }
+
+    .card-label {
+      font-size: 0.72rem;
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      color: var(--text-muted);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 10px;
+    }
+    .card-label span.icon { font-size: 1rem; }
+    .card-value {
+      font-size: 1.8rem;
+      font-weight: 700;
+      font-family: var(--mono);
+      line-height: 1.1;
+      color: #fff;
+    }
+    .card-sub {
+      font-size: 0.78rem;
+      color: var(--text-muted);
+      margin-top: 8px;
+      line-height: 1.4;
+    }
+
+    /* Progress bar */
+    .bar-wrap {
+      height: 8px;
+      background: var(--surface-alt);
+      border-radius: 4px;
+      overflow: hidden;
+      margin-top: 10px;
+    }
+    .bar-fill {
+      height: 100%;
+      border-radius: 4px;
+      transition: width .6s ease;
+      background: linear-gradient(90deg, #38bdf8, #818cf8);
+    }
+    .bar-fill.purple {
+      background: linear-gradient(90deg, #818cf8, #c084fc);
+    }
+    .bar-fill.warning {
+      background: linear-gradient(90deg, #f59e0b, #ef4444);
+    }
+
+    /* Token Gauge */
+    .token-gauge-numbers {
+      display: flex;
+      align-items: baseline;
+      gap: 8px;
+      font-family: var(--mono);
+    }
+    .token-gauge-max {
+      color: var(--text-dim);
+      font-size: 0.85rem;
+    }
+
+    /* ── Active Book Ingestion Banner ───────────────────────── */
+    .active-banner {
+      background: linear-gradient(135deg, rgba(30, 41, 59, 0.7) 0%, rgba(15, 23, 42, 0.9) 100%);
+      border: 1px solid rgba(56, 189, 248, 0.35);
+      border-radius: var(--radius);
+      padding: 20px 24px;
+      box-shadow: 0 8px 32px -4px rgba(0, 0, 0, 0.4);
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 20px;
+      align-items: center;
+    }
+    @media (max-width: 768px) {
+      .active-banner { grid-template-columns: 1fr; }
+    }
+    .banner-title-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+    .banner-title {
+      font-size: 1.15rem;
+      font-weight: 700;
+      color: #fff;
+    }
+    .active-stats-grid {
+      display: flex;
+      gap: 24px;
+      margin-top: 12px;
+      flex-wrap: wrap;
+    }
+    .active-stat-item {
+      display: flex;
+      flex-direction: column;
+    }
+    .active-stat-label {
+      font-size: 0.7rem;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    .active-stat-val {
+      font-size: 1.15rem;
+      font-weight: 600;
+      font-family: var(--mono);
+      color: var(--cyan);
+      margin-top: 2px;
+    }
+
+    /* ── Content Columns: Left (Table + Estimate) & Right (Log Console) ── */
+    .content-layout {
+      display: grid;
+      grid-template-columns: 1.1fr 0.9fr;
+      gap: 20px;
+    }
+    @media (max-width: 1200px) {
+      .content-layout { grid-template-columns: 1fr; }
+    }
+
+    /* ── Section Card Containers ─────────────────────────────── */
+    .section-box {
+      background: var(--surface-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+    .section-header {
+      padding: 14px 20px;
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .section-title {
+      font-size: 0.9rem;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    /* ── Books Table ────────────────────────────────────────── */
+    .table-container {
+      overflow-x: auto;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.85rem;
+    }
+    th {
+      background: rgba(14, 20, 36, 0.6);
+      padding: 10px 14px;
+      text-align: left;
+      font-size: 0.7rem;
+      text-transform: uppercase;
+      letter-spacing: 0.6px;
+      color: var(--text-muted);
+      border-bottom: 1px solid var(--border);
+    }
+    td {
+      padding: 12px 14px;
+      border-bottom: 1px solid var(--border);
+      vertical-align: middle;
+    }
+    tbody tr:hover {
+      background: rgba(255, 255, 255, 0.02);
+    }
+    td.num {
+      font-family: var(--mono);
+      color: var(--text-dim);
+      width: 36px;
+    }
+    .book-title {
+      font-weight: 600;
+      color: #fff;
+    }
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      padding: 3px 9px;
+      border-radius: 12px;
+      font-size: 0.72rem;
+      font-weight: 600;
+    }
+    .badge.processing {
+      background: rgba(56, 189, 248, 0.15);
+      color: var(--cyan);
+      border: 1px solid rgba(56, 189, 248, 0.3);
+    }
+    .badge.completed {
+      background: rgba(16, 185, 129, 0.15);
+      color: var(--green);
+      border: 1px solid rgba(16, 185, 129, 0.3);
+    }
+    .badge.paused_quota {
+      background: rgba(245, 158, 11, 0.15);
+      color: var(--amber);
+      border: 1px solid rgba(245, 158, 11, 0.3);
+    }
+    .badge.queued {
+      background: rgba(148, 163, 184, 0.12);
+      color: var(--text-muted);
+    }
+
+    /* ── Full Corpus Projection Card ────────────────────────── */
+    .projection-card {
+      background: linear-gradient(135deg, rgba(26, 36, 60, 0.5) 0%, rgba(14, 20, 36, 0.5) 100%);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 18px 20px;
+      margin-top: 16px;
+    }
+    .projection-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 12px;
+    }
+    .projection-header h3 {
+      font-size: 0.92rem;
+      font-weight: 600;
+      color: var(--cyan);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .projection-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 12px;
+    }
+    @media (max-width: 600px) {
+      .projection-grid { grid-template-columns: 1fr; }
+    }
+    .proj-stat {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      padding: 10px 12px;
+    }
+    .proj-stat-label {
+      font-size: 0.68rem;
+      color: var(--text-muted);
+      text-transform: uppercase;
+    }
+    .proj-stat-val {
+      font-size: 1.1rem;
+      font-weight: 700;
+      font-family: var(--mono);
+      color: #fff;
+      margin-top: 3px;
+    }
+    .proj-hint {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      margin-top: 12px;
+      line-height: 1.5;
+      padding-top: 10px;
+      border-top: 1px dashed var(--border);
+    }
+
+    /* ── Live Log Terminal Console ──────────────────────────── */
+    .terminal-container {
+      display: flex;
+      flex-direction: column;
+      height: 600px;
+      background: #090d16;
+      border-radius: 0 0 var(--radius) var(--radius);
+      position: relative;
+    }
+    .terminal-toolbar {
+      padding: 8px 14px;
+      background: rgba(14, 20, 36, 0.95);
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+    .terminal-search {
+      flex: 1;
+      min-width: 140px;
+      background: var(--surface-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      padding: 5px 10px;
+      color: var(--text);
+      font-size: 0.78rem;
+      font-family: var(--mono);
+      outline: none;
+    }
+    .terminal-search:focus {
+      border-color: var(--cyan);
+    }
+    .btn-tool {
+      background: var(--surface-card);
+      border: 1px solid var(--border);
+      color: var(--text-muted);
+      border-radius: var(--radius-sm);
+      padding: 4px 10px;
+      font-size: 0.74rem;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      transition: all .15s;
+    }
+    .btn-tool:hover {
+      border-color: var(--cyan);
+      color: #fff;
+    }
+    .btn-tool.active {
+      background: rgba(56, 189, 248, 0.15);
+      border-color: var(--cyan);
+      color: var(--cyan);
+    }
+
+    .terminal-body {
+      flex: 1;
+      overflow-y: auto;
+      padding: 12px 14px;
+      font-family: var(--mono);
+      font-size: 0.76rem;
+      line-height: 1.6;
+      color: #cbd5e1;
+      white-space: pre-wrap;
+      word-break: break-all;
+    }
+    .log-line {
+      margin-bottom: 2px;
+      padding: 1px 4px;
+      border-radius: 2px;
+      transition: background .1s;
+    }
+    .log-line:hover {
+      background: rgba(255, 255, 255, 0.04);
+    }
+    .log-line .tag-info { color: #38bdf8; }
+    .log-line .tag-llm  { color: #c084fc; font-weight: 500; }
+    .log-line .tag-warn { color: #fbbf24; }
+    .log-line .tag-err  { color: #f87171; font-weight: 600; }
+    .log-line .tag-chunk { color: #34d399; font-weight: 600; }
+
+    /* ── Scrollbar ──────────────────────────────────────────── */
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: #334155; border-radius: 3px; }
+    ::-webkit-scrollbar-thumb:hover { background: #475569; }
+  </style>
+</head>
+<body>
+
+  <!-- Top Navigation Header -->
+  <header>
+    <div class="header-left">
+      <div class="header-logo">🔭</div>
+      <div class="header-titles">
+        <h1>LightRAG 天文知识库构建看板</h1>
+        <p>Patrick Moore & Deep Sky Companions 系列图谱知识抽取引擎</p>
+      </div>
+    </div>
+    <div class="header-right">
+      <div id="live-badge" class="live-badge">
+        <span class="live-dot"></span>
+        <span id="live-text">实时同步中</span>
+      </div>
+      <span id="clock" style="font-family:var(--mono);font-size:0.8rem;color:var(--text-muted)">--:--:--</span>
+    </div>
+  </header>
+
+  <main>
+    <!-- Top 4 Metrics Row -->
+    <div class="metrics-grid">
+      <!-- Card 1: 5h Token Quota -->
+      <div class="metric-card hero">
+        <div class="card-label">
+          <span>⚡ 5小时 Token 窗口配额 (MiniMax-M3)</span>
+          <span class="icon" title="5小时动态滑动窗口限制">🛡️</span>
+        </div>
+        <div class="token-gauge-numbers">
+          <span id="tok-used" class="card-value">--</span>
+          <span class="token-gauge-max">/ 4,860,000 (90% 软限)</span>
+        </div>
+        <div class="bar-wrap">
+          <div id="tok-bar" class="bar-fill" style="width: 0%"></div>
+        </div>
+        <div class="card-sub" id="tok-sub">
+          当前已使用 <b id="tok-pct">0.0%</b> | 额度上限: 540万 tokens | 月度累计: <span id="tok-monthly">--</span>
+        </div>
+      </div>
+
+      <!-- Card 2: Reset Countdown -->
+      <div class="metric-card">
+        <div class="card-label">
+          <span>⏱️ 配额刷新倒计时</span>
+          <span class="icon">⌛</span>
+        </div>
+        <div id="countdown" class="card-value" style="color:var(--amber)">--:--:--</div>
+        <div class="card-sub">
+          下次重置时间: <span id="reset-target" style="font-family:var(--mono);color:#fff">--</span>
+          <div id="quota-status" style="margin-top:3px;font-size:0.75rem">🟢 管道正常提取中</div>
+        </div>
+      </div>
+
+      <!-- Card 3: POC Overall Progress -->
+      <div class="metric-card">
+        <div class="card-label">
+          <span>📚 POC 5本书目标进度</span>
+          <span class="icon">🎯</span>
+        </div>
+        <div style="display:flex;align-items:baseline;gap:6px">
+          <span id="poc-completed" class="card-value">0</span>
+          <span style="color:var(--text-dim);font-size:1.1rem;font-family:var(--mono)">/ 5 本</span>
+        </div>
+        <div class="bar-wrap">
+          <div id="poc-bar" class="bar-fill purple" style="width: 0%"></div>
+        </div>
+        <div class="card-sub" id="poc-sub">
+          总进度: 0% | 预估完成: 约 2.5 ~ 3.5 天
+        </div>
+      </div>
+
+      <!-- Card 4: Knowledge Graph Stats -->
+      <div class="metric-card">
+        <div class="card-label">
+          <span>🕸️ 知识图谱抽取产出</span>
+          <span class="icon">✨</span>
+        </div>
+        <div style="display:flex;gap:16px;align-items:baseline">
+          <div>
+            <div style="font-size:0.68rem;color:var(--text-muted)">已抽取实体</div>
+            <div id="stat-ent" class="card-value" style="font-size:1.4rem;color:var(--cyan)">--</div>
+          </div>
+          <div>
+            <div style="font-size:0.68rem;color:var(--text-muted)">已抽取关系</div>
+            <div id="stat-rel" class="card-value" style="font-size:1.4rem;color:var(--purple)">--</div>
+          </div>
+        </div>
+        <div class="card-sub">
+          LLM 响应缓存: <span id="stat-cache" style="font-family:var(--mono);color:#fff">--</span> 块
+        </div>
+      </div>
+    </div>
+
+    <!-- Active Book Progress Banner -->
+    <div class="active-banner">
+      <div>
+        <div class="banner-title-row">
+          <span class="badge processing" id="active-badge">🔄 当前正在抽取</span>
+          <span class="banner-title" id="active-book-title">正在载入...</span>
+        </div>
+        <div class="bar-wrap" style="height:10px;margin-top:14px;background:rgba(0,0,0,0.3)">
+          <div id="active-chunk-bar" class="bar-fill" style="width: 0%"></div>
+        </div>
+        <div class="active-stats-grid">
+          <div class="active-stat-item">
+            <span class="active-stat-label">切块进度</span>
+            <span class="active-stat-val" id="active-chunks-text">-- / --</span>
+          </div>
+          <div class="active-stat-item">
+            <span class="active-stat-label">百分比</span>
+            <span class="active-stat-val" id="active-pct-text">0.0%</span>
+          </div>
+          <div class="active-stat-item">
+            <span class="active-stat-label">单块处理速度</span>
+            <span class="active-stat-val" id="active-speed-text">-- s / 块</span>
+          </div>
+          <div class="active-stat-item">
+            <span class="active-stat-label">当前书籍预估剩余耗时</span>
+            <span class="active-stat-val" style="color:var(--amber)" id="active-eta-text">--</span>
+          </div>
+        </div>
+      </div>
+      <div>
+        <button class="btn-tool" onclick="refreshState()" style="padding:8px 16px;font-size:0.82rem">
+          🔄 立即刷新
+        </button>
+      </div>
+    </div>
+
+    <!-- Two-column section: Books Table vs. Live Log Console -->
+    <div class="content-layout">
+      <!-- Left Column: POC Books Table & Scale Projection -->
+      <div>
+        <div class="section-box">
+          <div class="section-header">
+            <div class="section-title">📖 Deep Sky Companions 系列（POC 5 本）</div>
+            <span style="font-size:0.75rem;color:var(--text-muted)">按序注入 LightRAG 知识图谱</span>
+          </div>
+          <div class="table-container">
+            <table>
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th>书名</th>
+                  <th>状态</th>
+                  <th>切块进度</th>
+                  <th>实体/关系</th>
+                </tr>
+              </thead>
+              <tbody id="books-table-body">
+                <tr><td colspan="5" style="text-align:center;padding:30px;color:var(--text-muted)">正在读取状态...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Full Corpus Projection Card -->
+        <div class="projection-card">
+          <div class="projection-header">
+            <h3>🌌 全库规模测算与耗时预估</h3>
+            <span style="font-size:0.72rem;background:rgba(56,189,248,0.1);color:var(--cyan);padding:2px 8px;border-radius:10px">
+              测算模型: 5.4M Token / 5小时
+            </span>
+          </div>
+          <div class="projection-grid">
+            <div class="proj-stat">
+              <div class="proj-stat-label">全库书籍总数</div>
+              <div class="proj-stat-val" id="proj-total-books">154 本</div>
+            </div>
+            <div class="proj-stat">
+              <div class="proj-stat-label">单本平均耗时</div>
+              <div class="proj-stat-val" style="color:var(--cyan)">~4.5 小时</div>
+            </div>
+            <div class="proj-stat">
+              <div class="proj-stat-label">全库完成预计需时</div>
+              <div class="proj-stat-val" style="color:var(--amber)" id="proj-est-days">~28 - 32 天</div>
+            </div>
+          </div>
+          <div class="proj-hint">
+            💡 <b>耗时分析与加速建议：</b> 
+            LightRAG 的瓶颈不在本地算力，而在 <b>大模型实体抽取的上下文长度与 5 小时 540 万 Token 的速率配额</b>。
+            当前配置已启用智能软限平滑等待（避免封禁），若后续需要 3-5 天内全库 150+ 本书完工，可通过配置 <b>多 API Key 轮询</b> 或 <b>MiniMax 提高套餐并发与配额上限</b> 即可实现线性倍数加速。
+          </div>
+        </div>
+      </div>
+
+      <!-- Right Column: Live Terminal Log Console -->
+      <div class="section-box">
+        <div class="section-header">
+          <div class="section-title">
+            <span>📜 实时图谱抽取日志终端</span>
+            <span id="log-file-name" style="font-size:0.72rem;font-family:var(--mono);color:var(--text-muted)"></span>
+          </div>
+          <span style="font-size:0.72rem;color:var(--green)">● SSE 管道连通</span>
+        </div>
+        <div class="terminal-container">
+          <div class="terminal-toolbar">
+            <input type="text" id="log-filter" class="terminal-search" placeholder="🔍 过滤日志（例如: Chunk, Token, LLM）" oninput="applyLogFilter()" />
+            <button id="btn-autoscroll" class="btn-tool active" onclick="toggleAutoScroll()">⬇️ 自动滚动: 开</button>
+            <button class="btn-tool" onclick="clearTerminal()">🧹 清屏</button>
+          </div>
+          <div id="terminal-body" class="terminal-body"></div>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <script>
+    // ── Application State ─────────────────────────────────────
+    let state = null;
+    let autoScroll = true;
+    let logLines = [];
+    let countdownTimer = null;
+    let secondsLeft = 0;
+
+    // ── Formatters ────────────────────────────────────────────
+    function fmtNum(n) {
+      if (n === null || n === undefined) return '--';
+      return Number(n).toLocaleString();
+    }
+
+    function formatTime(secs) {
+      if (secs <= 0) return '00:00:00';
+      const h = Math.floor(secs / 3600);
+      const m = Math.floor((secs % 3600) / 60);
+      const s = Math.floor(secs % 60);
+      return `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
+    }
+
+    // ── Update Dashboard Elements ─────────────────────────────
+    function renderState(data) {
+      if (!data) return;
+      state = data;
+
+      // 1. Token metrics
+      const tok = data.token || {};
+      const used = tok.window_tokens || 0;
+      const softLimit = tok.window_soft_limit || 4860000;
+      const pct = tok.window_pct || (used / softLimit * 100);
+
+      document.getElementById('tok-used').textContent = fmtNum(used);
+      document.getElementById('tok-pct').textContent = pct.toFixed(1) + '%';
+      document.getElementById('tok-monthly').textContent = fmtNum(tok.monthly_tokens) + ' tokens';
+
+      const tokBar = document.getElementById('tok-bar');
+      tokBar.style.width = Math.min(100, pct) + '%';
+      if (pct >= 90) {
+        tokBar.className = 'bar-fill warning';
+      } else {
+        tokBar.className = 'bar-fill';
+      }
+
+      // 2. Countdown
+      secondsLeft = tok.seconds_until_reset || 0;
+      document.getElementById('reset-target').textContent = tok.reset_time_str || '--';
+
+      const isQuotaPaused = data.system.status === 'paused_quota';
+      const quotaStatusEl = document.getElementById('quota-status');
+      const liveBadge = document.getElementById('live-badge');
+      const liveText = document.getElementById('live-text');
+
+      if (isQuotaPaused) {
+        quotaStatusEl.innerHTML = '⏸️ <span style="color:var(--amber)">已达配额软限，熔断等待窗口重置</span>';
+        liveBadge.className = 'live-badge paused';
+        liveText.textContent = '配额等待中';
+      } else {
+        quotaStatusEl.innerHTML = '🟢 <span style="color:var(--green)">管道正常提取中</span>';
+        liveBadge.className = 'live-badge';
+        liveText.textContent = '实时同步中';
+      }
+
+      // 3. Active Book Banner
+      const active = data.active_book || {};
+      document.getElementById('active-book-title').textContent = active.name || '未知书籍';
+      document.getElementById('active-chunks-text').textContent = `${active.chunk_done} / ${active.chunk_total}`;
+      document.getElementById('active-pct-text').textContent = `${active.chunk_pct}%`;
+      document.getElementById('active-speed-text').textContent = `~${active.speed_sec_per_chunk}s / 块`;
+      document.getElementById('active-eta-text').textContent = active.eta_formatted || '--';
+      document.getElementById('active-chunk-bar').style.width = `${Math.min(100, active.chunk_pct)}%`;
+
+      // 4. Knowledge Graph Stats
+      const kg = data.knowledge_graph || {};
+      document.getElementById('stat-ent').textContent = fmtNum(kg.entities_extracted);
+      document.getElementById('stat-rel').textContent = fmtNum(kg.relations_extracted);
+      document.getElementById('stat-cache').textContent = fmtNum(kg.cache_entries);
+
+      // 5. POC Target Progress
+      const poc = data.poc || {};
+      document.getElementById('poc-completed').textContent = poc.completed_books || 0;
+      document.getElementById('poc-bar').style.width = `${poc.progress_pct}%`;
+      document.getElementById('poc-sub').textContent = `总进度: ${poc.progress_pct}% | 预估完成: 约 ${poc.est_days || 3} 天`;
+
+      // 6. Books Table
+      renderBooksTable(poc.books || []);
+
+      // 7. Full Corpus Projection
+      const full = data.full_corpus || {};
+      if (full.total_books) {
+        document.getElementById('proj-total-books').textContent = `${full.total_books} 本`;
+      }
+      if (full.est_days) {
+        document.getElementById('proj-est-days').textContent = `~${Math.round(full.est_days)} 天`;
+      }
+
+      // 8. Log filename
+      if (data.system && data.system.log_file) {
+        document.getElementById('log-file-name').textContent = `(${data.system.log_file})`;
+      }
+    }
+
+    function renderBooksTable(books) {
+      const tbody = document.getElementById('books-table-body');
+      if (!books || books.length === 0) return;
+
+      tbody.innerHTML = books.map(b => {
+        let badgeHtml = '';
+        if (b.status === 'completed') {
+          badgeHtml = '<span class="badge completed">✅ 已完成</span>';
+        } else if (b.status === 'processing') {
+          badgeHtml = '<span class="badge processing">🔄 提取中</span>';
+        } else if (b.status === 'paused_quota') {
+          badgeHtml = '<span class="badge paused_quota">⏸️ 熔断等待</span>';
+        } else {
+          badgeHtml = '<span class="badge queued">⏳ 排队中</span>';
+        }
+
+        const chunkInfo = b.status === 'completed' 
+          ? `${b.chunks_total} 块 (100%)` 
+          : (b.status === 'queued' ? '等待排队' : `${b.chunks_done} / ${b.chunks_total} (${b.progress_pct}%)`);
+
+        const entRelInfo = b.entities && b.entities !== '-'
+          ? `${fmtNum(b.entities)} 实体 / ${fmtNum(b.relations)} 关系`
+          : '--';
+
+        return `
+          <tr>
+            <td class="num">${b.index}</td>
+            <td>
+              <div class="book-title">${b.title}</div>
+            </td>
+            <td>${badgeHtml}</td>
+            <td style="font-family:var(--mono);font-size:0.8rem">${chunkInfo}</td>
+            <td style="font-family:var(--mono);font-size:0.8rem;color:var(--text-muted)">${entRelInfo}</td>
+          </tr>
+        `;
+      }).join('');
+    }
+
+    // ── Log Terminal Operations ───────────────────────────────
+    function appendLogs(lines) {
+      if (!lines || lines.length === 0) return;
+      lines.forEach(l => {
+        logLines.push(l);
+        if (logLines.length > 500) logLines.shift();
+      });
+      renderTerminal();
+    }
+
+    function colorizeLine(line) {
+      let escaped = line.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      if (escaped.includes('[ERROR]')) {
+        return `<span class="tag-err">${escaped}</span>`;
+      }
+      if (escaped.includes('[WARNING]') || escaped.includes('warn')) {
+        return `<span class="tag-warn">${escaped}</span>`;
+      }
+      if (escaped.includes('[LLM]') || escaped.includes('MiniMax')) {
+        return `<span class="tag-llm">${escaped}</span>`;
+      }
+      if (escaped.includes('Chunk') && escaped.includes('extracted')) {
+        return `<span class="tag-chunk">${escaped}</span>`;
+      }
+      if (escaped.includes('[INFO]')) {
+        return `<span class="tag-info">${escaped}</span>`;
+      }
+      return escaped;
+    }
+
+    function renderTerminal() {
+      const body = document.getElementById('terminal-body');
+      const filter = document.getElementById('log-filter').value.toLowerCase().trim();
+
+      const filtered = filter 
+        ? logLines.filter(l => l.toLowerCase().includes(filter))
+        : logLines;
+
+      body.innerHTML = filtered.map(l => `<div class="log-line">${colorizeLine(l)}</div>`).join('');
+
+      if (autoScroll) {
+        body.scrollTop = body.scrollHeight;
+      }
+    }
+
+    function applyLogFilter() {
+      renderTerminal();
+    }
+
+    function toggleAutoScroll() {
+      autoScroll = !autoScroll;
+      const btn = document.getElementById('btn-autoscroll');
+      if (autoScroll) {
+        btn.className = 'btn-tool active';
+        btn.textContent = '⬇️ 自动滚动: 开';
+        document.getElementById('terminal-body').scrollTop = document.getElementById('terminal-body').scrollHeight;
+      } else {
+        btn.className = 'btn-tool';
+        btn.textContent = '⏸️ 自动滚动: 关';
+      }
+    }
+
+    function clearTerminal() {
+      logLines = [];
+      renderTerminal();
+    }
+
+    // ── SSE & Fetching ────────────────────────────────────────
+    async function refreshState() {
+      try {
+        const res = await fetch('/api/state');
+        const data = await res.json();
+        renderState(data);
+      } catch (err) {
+        console.error('Failed to fetch state:', err);
+      }
+    }
+
+    function startSSE() {
+      const evtSource = new EventSource('/stream');
+
+      evtSource.onmessage = function(e) {
+        try {
+          const payload = JSON.parse(e.data);
+          if (payload.type === 'ping') return;
+          if (payload.type === 'update') {
+            if (payload.state) renderState(payload.state);
+            if (payload.new_logs && payload.new_logs.length > 0) {
+              appendLogs(payload.new_logs);
+            }
+          }
+        } catch (err) {
+          console.error('Error handling SSE payload:', err);
+        }
+      };
+
+      evtSource.onerror = function() {
+        const liveBadge = document.getElementById('live-badge');
+        const liveText = document.getElementById('live-text');
+        liveBadge.className = 'live-badge offline';
+        liveText.textContent = '重连中...';
+      };
+    }
+
+    // ── Local Clocks & Countdowns ─────────────────────────────
+    setInterval(() => {
+      // Local time
+      document.getElementById('clock').textContent = new Date().toLocaleTimeString('zh-CN');
+
+      // Countdown
+      if (secondsLeft > 0) {
+        secondsLeft--;
+        document.getElementById('countdown').textContent = formatTime(secondsLeft);
+      } else {
+        document.getElementById('countdown').textContent = '00:00:00';
+      }
+    }, 1000);
+
+    // Initial load
+    refreshState();
+    startSSE();
+  </script>
+</body>
+</html>
