@@ -1,0 +1,4 @@
+lightrag-hku>=1.5.7
+python-dotenv
+httpx
+numpy
