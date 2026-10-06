@@ -13,12 +13,20 @@ from datetime import datetime
 from pathlib import Path
 from flask import Flask, Response, jsonify, send_from_directory, request
 
+from dotenv import load_dotenv
+
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
 if hasattr(sys.stderr, "reconfigure"):
     sys.stderr.reconfigure(encoding="utf-8")
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
+load_dotenv(PROJECT_ROOT / ".env")
+
+# Authentication credentials
+DASHBOARD_USER = (os.getenv("DASHBOARD_USER_NAME") or os.getenv("DASHBOARD_USERNAME") or "admin").strip()
+DASHBOARD_PASSWORD = os.getenv("DASHBOARD_PASSWORD", "").strip()
+
 DATA_DIR = PROJECT_ROOT / "data"
 LOGS_DIR = PROJECT_ROOT / "logs"
 WORKSPACE_DIR = PROJECT_ROOT / "lightrag_workspace"
@@ -309,6 +317,78 @@ def get_dashboard_state():
             "last_log_line": log_stats["last_log_line"]
         }
     }
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Authentication & Security
+# ──────────────────────────────────────────────────────────────────────────────
+
+def check_auth_credentials(user, pwd):
+    if not DASHBOARD_PASSWORD:
+        return True
+    return user == DASHBOARD_USER and pwd == DASHBOARD_PASSWORD
+
+
+@app.before_request
+def require_authentication():
+    """Enforces authentication via Cookie, HTTP Basic Auth, or query parameter."""
+    if not DASHBOARD_PASSWORD:
+        return None
+
+    # 1. Check Cookie
+    cookie_token = request.cookies.get("dashboard_auth")
+    if cookie_token and cookie_token == DASHBOARD_PASSWORD:
+        return None
+
+    # 2. Check HTTP Basic Auth
+    auth = request.authorization
+    if auth and check_auth_credentials(auth.username, auth.password):
+        return None
+
+    # 3. Check query param: ?token=... or ?pwd=...
+    token_param = request.args.get("token") or request.args.get("pwd")
+    if token_param and token_param == DASHBOARD_PASSWORD:
+        return None
+
+    user_param = request.args.get("user") or request.args.get("username")
+    pwd_param = request.args.get("password")
+    if user_param and pwd_param and check_auth_credentials(user_param, pwd_param):
+        return None
+
+    # Unauthorized: request Basic Auth modal
+    return Response(
+        "401 Unauthorized: Authentication required to view LightRAG Dashboard.\n",
+        401,
+        {"WWW-Authenticate": 'Basic realm="Astronomy LightRAG Dashboard"'}
+    )
+
+
+@app.after_request
+def set_auth_cookie(response):
+    """Sets a persistent session cookie upon successful authentication."""
+    if DASHBOARD_PASSWORD and response.status_code == 200:
+        auth = request.authorization
+        token_param = request.args.get("token") or request.args.get("pwd")
+        user_param = request.args.get("user") or request.args.get("username")
+        pwd_param = request.args.get("password")
+
+        is_authed = False
+        if auth and check_auth_credentials(auth.username, auth.password):
+            is_authed = True
+        elif token_param and token_param == DASHBOARD_PASSWORD:
+            is_authed = True
+        elif user_param and pwd_param and check_auth_credentials(user_param, pwd_param):
+            is_authed = True
+
+        if is_authed and not request.cookies.get("dashboard_auth"):
+            response.set_cookie(
+                "dashboard_auth",
+                DASHBOARD_PASSWORD,
+                max_age=86400 * 7,
+                httponly=True,
+                samesite="Lax"
+            )
+    return response
 
 
 # ──────────────────────────────────────────────────────────────────────────────
