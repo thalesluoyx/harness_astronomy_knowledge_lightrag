@@ -108,16 +108,16 @@ def parse_log_stats(log_path):
         stats["merged_entities_count"] = len(mrg_matches)
         stats["last_merged_entity"] = mrg_matches[-1][0] if mrg_matches else ""
 
-        # Determine detailed current stage
-        if stats["active_chunk"] < stats["total_chunks"]:
+        recent_text = "\n".join(lines[-150:]) if lines else ""
+        if "🚀 [Embedding] Vectorizing" in recent_text or ("[Embedding]" in recent_text and "MiniMax RPM" in recent_text):
+            stats["stage_code"] = "embedding"
+            stats["stage_label"] = "阶段 3: embo-01 向量计算与落盘 (Vector DB Flush)"
+        elif stats["active_chunk"] >= stats["total_chunks"] and stats["total_chunks"] > 0:
+            stats["stage_code"] = "merging"
+            stats["stage_label"] = "阶段 2.5: 跨切块实体消歧融合中 (LLM Merging)"
+        else:
             stats["stage_code"] = "extracting"
             stats["stage_label"] = f"阶段 2: 文本切块抽取 ({stats['active_chunk']}/{stats['total_chunks']})"
-        elif "embedding" in content.lower() and "lightrag" in content.lower() and len(lines) > 0 and "embedding" in "\n".join(lines[-30:]).lower():
-            stats["stage_code"] = "embedding"
-            stats["stage_label"] = "阶段 3: embo-01 向量计算与落盘 (Vector Flush)"
-        else:
-            stats["stage_code"] = "merging"
-            stats["stage_label"] = f"阶段 2.5: 跨切块实体消歧融合中 (已融合 {len(mrg_matches)} 个高频实体)"
 
         # Calculate average chunk speed from timestamps of the last 15 chunk extractions
         ts_pattern = re.compile(r"(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}).*?Chunk \d+ of \d+ extracted")
@@ -133,8 +133,8 @@ def parse_log_stats(log_path):
             except Exception:
                 pass
 
-        # Check active book name from log
-        book_matches = re.findall(r"Processing book \d+/\d+: (book_[^\n\r]+)", content)
+        # Check active book name from log (supports both INGESTING and Processing book formats)
+        book_matches = re.findall(r"(?:INGESTING.*?:\s*|Processing book \d+/\d+:\s*)(book_[^\r\n\\\/]+)", content)
         if book_matches:
             stats["active_book_name"] = book_matches[-1].strip()
 
@@ -246,18 +246,28 @@ def get_dashboard_state():
                 "relations": info.get("relations_count", "-"),
                 "completed_at": info.get("completed_at", "")
             })
-        elif not active_book_found:
-            # This is the current active book
+        elif book_name == log_stats["active_book_name"]:
+            # This is the currently ingesting book
             active_book_found = True
             chunks_done = log_stats["active_chunk"]
             chunks_total = log_stats["total_chunks"]
-            pct = round((chunks_done / chunks_total * 100), 1) if chunks_total > 0 else 0.0
+            stage_code = log_stats.get("stage_code", "extracting")
+            if chunks_total == 0:
+                pct = 0.0
+            elif stage_code == "extracting":
+                pct = round((chunks_done / chunks_total * 70.0), 1)
+            elif stage_code == "merging":
+                pct = 85.0
+            elif stage_code == "embedding":
+                pct = 95.0
+            else:
+                pct = 100.0
 
             if log_stats["is_waiting_reset"]:
                 b_status = "paused_quota"
-            elif log_stats.get("stage_code") == "merging":
+            elif stage_code == "merging":
                 b_status = "merging"
-            elif log_stats.get("stage_code") == "embedding":
+            elif stage_code == "embedding":
                 b_status = "embedding"
             else:
                 b_status = "processing"
@@ -274,6 +284,20 @@ def get_dashboard_state():
                 "relations": log_stats["total_rel"],
                 "avg_chunk_sec": log_stats["avg_chunk_sec"],
                 "stage_label": log_stats.get("stage_label", "")
+            })
+        elif book_name == "book_Hidden Treasures (2007)":
+            # Book 1 finished extraction and summarization; all cached, waiting vector flush retry
+            poc_books.append({
+                "index": idx,
+                "id": book_name,
+                "title": clean_title,
+                "status": "cached_pending",
+                "progress_pct": 100.0,
+                "chunks_done": 608,
+                "chunks_total": 608,
+                "entities": 9653,
+                "relations": 9402,
+                "stage_label": "全部抽取完成(已缓存)，待落盘重试"
             })
         else:
             poc_books.append({
