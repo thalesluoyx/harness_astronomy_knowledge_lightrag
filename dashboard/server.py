@@ -103,6 +103,22 @@ def parse_log_stats(log_path):
             stats["latest_ent"] = int(last_m[2])
             stats["latest_rel"] = int(last_m[3])
 
+        # Track Stage 2.5: Entity & Relation Summarization / Merging (LLMmrg)
+        mrg_matches = re.findall(r"LLMmrg: `([^`]+)` \| (\d+)\+(\d+)", content)
+        stats["merged_entities_count"] = len(mrg_matches)
+        stats["last_merged_entity"] = mrg_matches[-1][0] if mrg_matches else ""
+
+        # Determine detailed current stage
+        if stats["active_chunk"] < stats["total_chunks"]:
+            stats["stage_code"] = "extracting"
+            stats["stage_label"] = f"阶段 2: 文本切块抽取 ({stats['active_chunk']}/{stats['total_chunks']})"
+        elif "embedding" in content.lower() and "lightrag" in content.lower() and len(lines) > 0 and "embedding" in "\n".join(lines[-30:]).lower():
+            stats["stage_code"] = "embedding"
+            stats["stage_label"] = "阶段 3: embo-01 向量计算与落盘 (Vector Flush)"
+        else:
+            stats["stage_code"] = "merging"
+            stats["stage_label"] = f"阶段 2.5: 跨切块实体消歧融合中 (已融合 {len(mrg_matches)} 个高频实体)"
+
         # Calculate average chunk speed from timestamps of the last 15 chunk extractions
         ts_pattern = re.compile(r"(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}).*?Chunk \d+ of \d+ extracted")
         ts_matches = ts_pattern.findall(content)
@@ -236,17 +252,28 @@ def get_dashboard_state():
             chunks_done = log_stats["active_chunk"]
             chunks_total = log_stats["total_chunks"]
             pct = round((chunks_done / chunks_total * 100), 1) if chunks_total > 0 else 0.0
+
+            if log_stats["is_waiting_reset"]:
+                b_status = "paused_quota"
+            elif log_stats.get("stage_code") == "merging":
+                b_status = "merging"
+            elif log_stats.get("stage_code") == "embedding":
+                b_status = "embedding"
+            else:
+                b_status = "processing"
+
             poc_books.append({
                 "index": idx,
                 "id": book_name,
                 "title": clean_title,
-                "status": "processing" if not log_stats["is_waiting_reset"] else "paused_quota",
+                "status": b_status,
                 "progress_pct": pct,
                 "chunks_done": chunks_done,
                 "chunks_total": chunks_total,
                 "entities": log_stats["total_ent"],
                 "relations": log_stats["total_rel"],
-                "avg_chunk_sec": log_stats["avg_chunk_sec"]
+                "avg_chunk_sec": log_stats["avg_chunk_sec"],
+                "stage_label": log_stats.get("stage_label", "")
             })
         else:
             poc_books.append({
@@ -291,6 +318,10 @@ def get_dashboard_state():
             "chunk_total": log_stats["total_chunks"],
             "chunk_pct": round(log_stats["active_chunk"] / max(1, log_stats["total_chunks"]) * 100, 1),
             "speed_sec_per_chunk": log_stats["avg_chunk_sec"],
+            "stage_code": log_stats.get("stage_code", "extracting"),
+            "stage_label": log_stats.get("stage_label", ""),
+            "merged_entities_count": log_stats.get("merged_entities_count", 0),
+            "last_merged_entity": log_stats.get("last_merged_entity", ""),
             "eta_seconds": active_book_eta_sec,
             "eta_formatted": f"{active_book_eta_sec // 3600}小时 {(active_book_eta_sec % 3600) // 60}分钟"
         },

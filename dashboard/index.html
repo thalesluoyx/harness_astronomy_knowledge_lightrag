@@ -793,9 +793,25 @@
       // 3. Active Book Banner
       const active = data.active_book || {};
       document.getElementById('active-book-title').textContent = active.name || '未知书籍';
-      document.getElementById('active-chunks-text').textContent = `${active.chunk_done} / ${active.chunk_total}`;
+
+      const activeBadgeEl = document.getElementById('active-badge');
+      if (active.stage_code === 'merging') {
+        activeBadgeEl.innerHTML = `🔄 阶段 2.5: 实体消歧融合中 (${active.merged_entities_count || 0} 实体)`;
+        activeBadgeEl.className = 'badge processing';
+        document.getElementById('active-chunks-text').textContent = `切块 608/608 完工 | 融合 ${active.merged_entities_count || 0} 实体`;
+        if (active.last_merged_entity) {
+          document.getElementById('active-speed-text').textContent = `正在融合: ${active.last_merged_entity}`;
+        }
+      } else if (active.stage_code === 'embedding') {
+        activeBadgeEl.innerHTML = `⚡ 阶段 3: embo-01 向量生成与落盘中`;
+        activeBadgeEl.className = 'badge processing';
+        document.getElementById('active-chunks-text').textContent = `图谱实体融合已就绪，正在计算向量`;
+      } else {
+        document.getElementById('active-chunks-text').textContent = `${active.chunk_done} / ${active.chunk_total}`;
+        document.getElementById('active-speed-text').textContent = `~${active.speed_sec_per_chunk}s / 块`;
+      }
+
       document.getElementById('active-pct-text').textContent = `${active.chunk_pct}%`;
-      document.getElementById('active-speed-text').textContent = `~${active.speed_sec_per_chunk}s / 块`;
       document.getElementById('active-eta-text').textContent = active.eta_formatted || '--';
       document.getElementById('active-chunk-bar').style.width = `${Math.min(100, active.chunk_pct)}%`;
 
@@ -837,8 +853,12 @@
         let badgeHtml = '';
         if (b.status === 'completed') {
           badgeHtml = '<span class="badge completed">✅ 已完成</span>';
+        } else if (b.status === 'merging') {
+          badgeHtml = '<span class="badge processing" style="color:var(--purple);border-color:rgba(168,85,247,0.4)">🔄 实体融合中</span>';
+        } else if (b.status === 'embedding') {
+          badgeHtml = '<span class="badge processing" style="color:var(--cyan);border-color:rgba(56,189,248,0.4)">⚡ 向量计算中</span>';
         } else if (b.status === 'processing') {
-          badgeHtml = '<span class="badge processing">🔄 提取中</span>';
+          badgeHtml = '<span class="badge processing">🔄 切块抽取中</span>';
         } else if (b.status === 'paused_quota') {
           badgeHtml = '<span class="badge paused_quota">⏸️ 熔断等待</span>';
         } else {
@@ -847,7 +867,7 @@
 
         const chunkInfo = b.status === 'completed' 
           ? `${b.chunks_total} 块 (100%)` 
-          : (b.status === 'queued' ? '等待排队' : `${b.chunks_done} / ${b.chunks_total} (${b.progress_pct}%)`);
+          : (b.status === 'queued' ? '等待排队' : (b.status === 'merging' ? `608/608 (融合中)` : `${b.chunks_done} / ${b.chunks_total} (${b.progress_pct}%)`));
 
         const entRelInfo = b.entities && b.entities !== '-'
           ? `${fmtNum(b.entities)} 实体 / ${fmtNum(b.relations)} 关系`
