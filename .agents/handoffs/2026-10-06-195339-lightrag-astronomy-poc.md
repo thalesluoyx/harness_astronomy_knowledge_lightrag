@@ -2,22 +2,20 @@
 
 ## Session Metadata
 - Created: 2026-10-06 19:53:39
+- Updated: 2026-10-06 20:27:00
 - Project: C:\Work\openclaw_projects\bilingual_project
 - Sub-Project: harness_astronomy_knowledge_lightrag
-- Branch: master
-- Git Check Status: Clean commit 16095d6. Ready to push to GitHub remote once remote URL is configured.
-- Session duration: ~4.5 hours (Architecture setup, ADR implementation, token limiter, retry fix, global handoff skill setup)
+- Branch: main
+- Git Remote: https://github.com/thalesluoyx/harness_astronomy_knowledge_lightrag.git
+- Git Check Status: Clean commit 68b225a pushed to origin/main.
+- Session duration: ~5.0 hours (Architecture setup, ADR implementation, token limiter, retry fix, global handoff skill setup, real-time SSE dashboard)
 
 ### Recent Commits
+- 68b225a feat: add real-time LightRAG ingestion dashboard with SSE and log streamer
 - 16095d6 feat: complete astronomy LightRAG ingestion POC with token limiter
 
-
-## Handoff Chain
-- **Continues from**: None (fresh start)
-- **Supersedes**: None
-
 ## Current State Summary
-Building an astronomy knowledge base ingestion POC using LightRAG (lightrag-hku) targeting 5 bilingual books from The Deep Sky Companions series in bilingual_output/. The ingestion pipeline is currently ALIVE and RUNNING in background (Task task-585). It has extracted and cached over 1,432 entity/relation chunks. In the current 15:00-20:00 rate window, it hit the 90% quota limit (4,888,937 / 5,400,000 tokens) and entered a thread-safe 60-second heartbeat sleep loop. It will automatically wake up and continue ingestion across all 5 books at 20:00:00 when MiniMax's 5-hour quota resets.
+Building an astronomy knowledge base ingestion POC using LightRAG (lightrag-hku) targeting 5 bilingual books from The Deep Sky Companions series in bilingual_output/. The ingestion pipeline is currently ALIVE and actively extracting Book 1 chunks (>465/608 chunks extracted, ~76.5% done, speed ~17.2s/chunk) in the 20:00-01:00 window. A real-time Flask+SSE progress dashboard has been deployed on `http://localhost:7789` with token quota gauges, reset countdown, live knowledge graph metrics, and a real-time log terminal.
 
 ## Important Context
 1. Active Ingestion Task: Process task-585 is running python scripts/run_ingestion.py in background. Live logs stream to harness_astronomy_knowledge_lightrag/logs/lightrag_ingest_20261006_193257.log.
