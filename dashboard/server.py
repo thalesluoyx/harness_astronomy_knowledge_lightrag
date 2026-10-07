@@ -131,13 +131,14 @@ def parse_log_stats(log_path):
         recent_text = "\n".join(lines[-150:]) if lines else ""
         if "🚀 [Embedding] Vectorizing" in recent_text or ("[Embedding]" in recent_text and "MiniMax RPM" in recent_text):
             stats["stage_code"] = "embedding"
-            stats["stage_label"] = "阶段 3: embo-01 向量计算与落盘 (Vector DB Flush)"
+            stats["stage_label"] = "阶段 3/3: 向量嵌入落盘 (embo-01 向量写入)"
         elif stats["active_chunk"] >= stats["total_chunks"] and stats["total_chunks"] > 0:
             stats["stage_code"] = "merging"
-            stats["stage_label"] = "阶段 2: 跨切块实体消歧融合中 (LLM Merging)"
+            mrg_c = stats.get("merged_entities_count", 0)
+            stats["stage_label"] = f"阶段 2/3: 跨块实体消歧 (已消歧 {mrg_c} 个实体)" if mrg_c > 0 else "阶段 2/3: 跨块实体消歧 (消歧融合中)"
         else:
             stats["stage_code"] = "extracting"
-            stats["stage_label"] = f"阶段 1: 文本切块实体抽取 ({stats['active_chunk']}/{stats['total_chunks']})"
+            stats["stage_label"] = f"阶段 1/3: 文本切块抽取 ({stats['active_chunk']} / {stats['total_chunks']} 块)"
 
         # Calculate average chunk speed from timestamps of the last 15 chunk extractions
         ts_pattern = re.compile(r"(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}).*?Chunk \d+ of \d+ extracted")
@@ -374,16 +375,24 @@ def get_dashboard_state():
         "token": token_state,
         "active_book": {
             "name": log_stats["active_book_name"].replace("book_", ""),
+            "full_id": log_stats["active_book_name"],
             "chunk_done": log_stats["active_chunk"],
             "chunk_total": log_stats["total_chunks"],
             "chunk_pct": round(log_stats["active_chunk"] / max(1, log_stats["total_chunks"]) * 100, 1),
             "speed_sec_per_chunk": log_stats["avg_chunk_sec"],
             "stage_code": log_stats.get("stage_code", "extracting"),
             "stage_label": log_stats.get("stage_label", ""),
+            "entities_count": log_stats["total_ent"],
+            "relations_count": log_stats["total_rel"],
             "merged_entities_count": log_stats.get("merged_entities_count", 0),
             "last_merged_entity": log_stats.get("last_merged_entity", ""),
             "eta_seconds": active_book_eta_sec,
-            "eta_formatted": f"{active_book_eta_sec // 3600}小时 {(active_book_eta_sec % 3600) // 60}分钟"
+            "eta_formatted": f"{active_book_eta_sec // 3600}小时 {(active_book_eta_sec % 3600) // 60}分钟",
+            "overall_pct": round(
+                (log_stats["active_chunk"] / max(1, log_stats["total_chunks"]) * 70.0)
+                if log_stats.get("stage_code") == "extracting"
+                else (85.0 if log_stats.get("stage_code") == "merging" else 95.0), 1
+            )
         },
         "knowledge_graph": {
             "entities_extracted": log_stats["total_ent"],

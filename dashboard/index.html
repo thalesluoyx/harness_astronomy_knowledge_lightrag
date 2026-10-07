@@ -139,7 +139,7 @@
     /* ── Metric Cards Grid ─────────────────────────────────── */
     .metrics-grid {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
       gap: 16px;
     }
     .metric-card {
@@ -156,12 +156,6 @@
     .metric-card:hover {
       border-color: rgba(56, 189, 248, 0.4);
       transform: translateY(-2px);
-    }
-    .metric-card.hero {
-      grid-column: span 2;
-    }
-    @media (max-width: 1024px) {
-      .metric-card.hero { grid-column: span 1; }
     }
 
     .card-label {
@@ -222,20 +216,16 @@
       font-size: 0.85rem;
     }
 
-    /* ── Active Book Ingestion Banner ───────────────────────── */
+    /* ── Active Book Ingestion Section ──────────────────────── */
     .active-banner {
-      background: linear-gradient(135deg, rgba(30, 41, 59, 0.7) 0%, rgba(15, 23, 42, 0.9) 100%);
+      background: linear-gradient(135deg, rgba(30, 41, 59, 0.75) 0%, rgba(15, 23, 42, 0.95) 100%);
       border: 1px solid rgba(56, 189, 248, 0.35);
       border-radius: var(--radius);
-      padding: 20px 24px;
+      padding: 22px 24px;
       box-shadow: 0 8px 32px -4px rgba(0, 0, 0, 0.4);
-      display: grid;
-      grid-template-columns: 1fr auto;
-      gap: 20px;
-      align-items: center;
-    }
-    @media (max-width: 768px) {
-      .active-banner { grid-template-columns: 1fr; }
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
     }
     .banner-title-row {
       display: flex;
@@ -244,32 +234,134 @@
       flex-wrap: wrap;
     }
     .banner-title {
-      font-size: 1.15rem;
+      font-size: 1.2rem;
       font-weight: 700;
       color: #fff;
     }
-    .active-stats-grid {
+
+    /* ── Multi-Stage Pipeline Stepper ────────────────────────── */
+    .pipeline-stepper {
       display: flex;
-      gap: 24px;
-      margin-top: 12px;
-      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      margin: 4px 0;
     }
-    .active-stat-item {
+    .step-item {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex: 1;
+      background: rgba(15, 23, 42, 0.65);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      padding: 12px 14px;
+      transition: all 0.3s ease;
+    }
+    .step-item.active {
+      border-color: rgba(56, 189, 248, 0.7);
+      background: rgba(56, 189, 248, 0.09);
+      box-shadow: 0 0 16px rgba(56, 189, 248, 0.15);
+    }
+    .step-item.completed {
+      border-color: rgba(16, 185, 129, 0.5);
+      background: rgba(16, 185, 129, 0.07);
+    }
+    .step-badge {
+      width: 26px;
+      height: 26px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.8rem;
+      font-weight: 700;
+      background: var(--surface-alt);
+      color: var(--text-muted);
+      flex-shrink: 0;
+      transition: all 0.3s ease;
+    }
+    .step-item.active .step-badge {
+      background: var(--cyan);
+      color: #070a13;
+      box-shadow: 0 0 10px rgba(56, 189, 248, 0.6);
+      animation: pulse 1.8s infinite;
+    }
+    .step-item.completed .step-badge {
+      background: var(--green);
+      color: #070a13;
+    }
+    .step-info {
       display: flex;
       flex-direction: column;
+      overflow: hidden;
     }
-    .active-stat-label {
+    .step-title {
+      font-size: 0.84rem;
+      font-weight: 600;
+      color: #fff;
+      white-space: nowrap;
+    }
+    .step-desc {
+      font-size: 0.72rem;
+      color: var(--text-muted);
+      margin-top: 2px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .step-arrow {
+      color: var(--text-dim);
+      font-size: 0.9rem;
+      padding: 0 2px;
+    }
+    @media (max-width: 960px) {
+      .pipeline-stepper { flex-direction: column; align-items: stretch; gap: 8px; }
+      .step-arrow { display: none; }
+    }
+
+    /* ── Active Book 6-Metric Cards Grid ──────────────────────── */
+    .active-metrics-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 12px;
+    }
+    .active-card {
+      background: rgba(15, 23, 42, 0.8);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      padding: 12px 14px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      transition: border-color .2s;
+    }
+    .active-card:hover {
+      border-color: rgba(56, 189, 248, 0.4);
+    }
+    .active-card-label {
       font-size: 0.7rem;
       color: var(--text-muted);
       text-transform: uppercase;
       letter-spacing: 0.5px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
     }
-    .active-stat-val {
-      font-size: 1.15rem;
-      font-weight: 600;
+    .active-card-val {
+      font-size: 1.25rem;
+      font-weight: 700;
       font-family: var(--mono);
-      color: var(--cyan);
-      margin-top: 2px;
+      color: #fff;
+      margin: 6px 0 2px 0;
+      line-height: 1.2;
+    }
+    .active-card-sub {
+      font-size: 0.72rem;
+      color: var(--text-muted);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
     }
 
     /* ── Content Columns: Left (Table + Estimate) & Right (Log Console) ── */
@@ -539,10 +631,10 @@
   </header>
 
   <main>
-    <!-- Top 4 Metrics Row -->
+    <!-- Section 1: System Macro Metrics (3 Cards) -->
     <div class="metrics-grid">
       <!-- Card 1: 5h Token Quota -->
-      <div class="metric-card hero">
+      <div class="metric-card">
         <div class="card-label">
           <span>⚡ 5小时 Token 窗口配额 (MiniMax-M3)</span>
           <span class="icon" title="5小时动态滑动窗口限制">🛡️</span>
@@ -589,62 +681,123 @@
           总进度: 0% | 预估完成: 约 2.5 ~ 3.5 天
         </div>
       </div>
-
-      <!-- Card 4: Knowledge Graph Stats -->
-      <div class="metric-card">
-        <div class="card-label">
-          <span>🕸️ 知识图谱抽取产出</span>
-          <span class="icon">✨</span>
-        </div>
-        <div style="display:flex;gap:16px;align-items:baseline">
-          <div>
-            <div style="font-size:0.68rem;color:var(--text-muted)">已抽取实体</div>
-            <div id="stat-ent" class="card-value" style="font-size:1.4rem;color:var(--cyan)">--</div>
-          </div>
-          <div>
-            <div style="font-size:0.68rem;color:var(--text-muted)">已抽取关系</div>
-            <div id="stat-rel" class="card-value" style="font-size:1.4rem;color:var(--purple)">--</div>
-          </div>
-        </div>
-        <div class="card-sub">
-          LLM 响应缓存: <span id="stat-cache" style="font-family:var(--mono);color:#fff">--</span> 块
-        </div>
-      </div>
     </div>
 
-    <!-- Active Book Progress Banner -->
+    <!-- Section 2: Active Book Multi-Stage Detailed Progress -->
     <div class="active-banner">
-      <div>
+      <!-- Title Row -->
+      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px">
         <div class="banner-title-row">
-          <span class="badge processing" id="active-badge">🔄 当前正在抽取</span>
+          <span style="font-size:1.3rem">📖</span>
           <span class="banner-title" id="active-book-title">正在载入...</span>
+          <span class="badge processing" id="active-badge" style="font-size:0.75rem">阶段 1/3: 文本切块实体抽取</span>
         </div>
-        <div class="bar-wrap" style="height:10px;margin-top:14px;background:rgba(0,0,0,0.3)">
-          <div id="active-chunk-bar" class="bar-fill" style="width: 0%"></div>
+        <div>
+          <button class="btn-tool" onclick="refreshState()" style="padding:6px 14px;font-size:0.8rem">
+            🔄 立即刷新
+          </button>
         </div>
-        <div class="active-stats-grid">
-          <div class="active-stat-item">
-            <span class="active-stat-label">切块进度</span>
-            <span class="active-stat-val" id="active-chunks-text">-- / --</span>
+      </div>
+
+      <!-- 3-Stage Visual Pipeline Stepper -->
+      <div class="pipeline-stepper">
+        <div class="step-item" id="step-stage-1">
+          <div class="step-badge" id="step-badge-1">1</div>
+          <div class="step-info">
+            <span class="step-title">阶段 1: 文本切块实体抽取</span>
+            <span class="step-desc" id="step-desc-1">切块提取实体与关系</span>
           </div>
-          <div class="active-stat-item">
-            <span class="active-stat-label">百分比</span>
-            <span class="active-stat-val" id="active-pct-text">0.0%</span>
+        </div>
+        <span class="step-arrow">➜</span>
+        <div class="step-item" id="step-stage-2">
+          <div class="step-badge" id="step-badge-2">2</div>
+          <div class="step-info">
+            <span class="step-title">阶段 2: 跨块实体消歧融合</span>
+            <span class="step-desc" id="step-desc-2">同名实体对齐与描述提炼</span>
           </div>
-          <div class="active-stat-item">
-            <span class="active-stat-label">单块处理速度</span>
-            <span class="active-stat-val" id="active-speed-text">-- s / 块</span>
-          </div>
-          <div class="active-stat-item">
-            <span class="active-stat-label">当前书籍预估剩余耗时</span>
-            <span class="active-stat-val" style="color:var(--amber)" id="active-eta-text">--</span>
+        </div>
+        <span class="step-arrow">➜</span>
+        <div class="step-item" id="step-stage-3">
+          <div class="step-badge" id="step-badge-3">3</div>
+          <div class="step-info">
+            <span class="step-title">阶段 3: 向量嵌入计算落盘</span>
+            <span class="step-desc" id="step-desc-3">embo-01 向量库写入</span>
           </div>
         </div>
       </div>
+
+      <!-- Overall Weighted Progress Bar for Current Book -->
       <div>
-        <button class="btn-tool" onclick="refreshState()" style="padding:8px 16px;font-size:0.82rem">
-          🔄 立即刷新
-        </button>
+        <div style="display:flex;justify-content:space-between;align-items:center;font-size:0.75rem;color:var(--text-muted);margin-bottom:6px">
+          <span>本书全流程综合完成度 (按 阶段1: 70% | 阶段2: 20% | 阶段3: 10% 权重)</span>
+          <span id="active-overall-pct" style="font-family:var(--mono);color:var(--cyan);font-weight:700;font-size:0.85rem">0.0%</span>
+        </div>
+        <div class="bar-wrap" style="height:8px;background:rgba(0,0,0,0.3);margin-top:0">
+          <div id="active-chunk-bar" class="bar-fill" style="width: 0%"></div>
+        </div>
+      </div>
+
+      <!-- 6-Metric Detailed Grid for Current Active Book -->
+      <div class="active-metrics-grid">
+        <!-- Metric 1: Stage 1 Chunk Extraction -->
+        <div class="active-card">
+          <div class="active-card-label">
+            <span>阶段 1 · 切块进度</span>
+            <span>📄</span>
+          </div>
+          <div class="active-card-val" id="active-chunks-text" style="color:var(--cyan)">-- / --</div>
+          <div class="active-card-sub" id="active-chunks-sub">进度: 0.0%</div>
+        </div>
+
+        <!-- Metric 2: Stage 1 Entity & Relation Yield -->
+        <div class="active-card">
+          <div class="active-card-label">
+            <span>阶段 1 · 图谱抽取产出</span>
+            <span>🕸️</span>
+          </div>
+          <div class="active-card-val" id="active-entrel-text" style="color:var(--purple);font-size:1.05rem">--</div>
+          <div class="active-card-sub" id="active-entrel-sub">抽取出的实体与关系总数</div>
+        </div>
+
+        <!-- Metric 3: Stage 2 Entity Merging -->
+        <div class="active-card">
+          <div class="active-card-label">
+            <span>阶段 2 · 跨块实体消歧</span>
+            <span>🧬</span>
+          </div>
+          <div class="active-card-val" id="active-merged-text" style="color:#fff">--</div>
+          <div class="active-card-sub" id="active-merged-sub">等待阶段 1 完成</div>
+        </div>
+
+        <!-- Metric 4: Stage 3 Vector Embedding -->
+        <div class="active-card">
+          <div class="active-card-label">
+            <span>阶段 3 · 向量嵌入落盘</span>
+            <span>⚡</span>
+          </div>
+          <div class="active-card-val" id="active-vdb-status" style="font-size:1.05rem;color:var(--text-muted)">等待阶段 2</div>
+          <div class="active-card-sub">模型: embo-01 (1024维)</div>
+        </div>
+
+        <!-- Metric 5: Chunk Speed -->
+        <div class="active-card">
+          <div class="active-card-label">
+            <span>处理速率</span>
+            <span>🚀</span>
+          </div>
+          <div class="active-card-val" id="active-speed-text">-- s / 块</div>
+          <div class="active-card-sub">最近15块滑动平均效率</div>
+        </div>
+
+        <!-- Metric 6: Estimated Time Remaining -->
+        <div class="active-card">
+          <div class="active-card-label">
+            <span>预估剩余耗时</span>
+            <span>⏱️</span>
+          </div>
+          <div class="active-card-val" id="active-eta-text" style="color:var(--amber)">--</div>
+          <div class="active-card-sub">基于单块耗时动态估算</div>
+        </div>
       </div>
     </div>
 
@@ -790,36 +943,131 @@
         liveText.textContent = '实时同步中';
       }
 
-      // 3. Active Book Banner
+      // 3. Active Book Stepper & Detailed Multi-Stage Metrics
       const active = data.active_book || {};
       document.getElementById('active-book-title').textContent = active.name || '未知书籍';
 
+      const stageCode = active.stage_code || 'extracting';
       const activeBadgeEl = document.getElementById('active-badge');
-      if (active.stage_code === 'merging') {
-        activeBadgeEl.innerHTML = `🔄 阶段 2.5: 实体消歧融合中 (${active.merged_entities_count || 0} 实体)`;
+      
+      const step1 = document.getElementById('step-stage-1');
+      const step2 = document.getElementById('step-stage-2');
+      const step3 = document.getElementById('step-stage-3');
+      const badge1 = document.getElementById('step-badge-1');
+      const badge2 = document.getElementById('step-badge-2');
+      const badge3 = document.getElementById('step-badge-3');
+
+      // Reset stepper visual states
+      step1.className = 'step-item';
+      step2.className = 'step-item';
+      step3.className = 'step-item';
+      badge1.textContent = '1';
+      badge2.textContent = '2';
+      badge3.textContent = '3';
+
+      const chunkDone = active.chunk_done || 0;
+      const chunkTotal = active.chunk_total || 0;
+      const chunkPct = active.chunk_pct || 0;
+      const entCount = active.entities_count || 0;
+      const relCount = active.relations_count || 0;
+      const mrgCount = active.merged_entities_count || 0;
+
+      if (stageCode === 'merging') {
+        activeBadgeEl.innerHTML = `🔄 阶段 2/3: 跨块实体消歧融合 (已消歧 ${mrgCount} 个核心实体)`;
         activeBadgeEl.className = 'badge processing';
-        document.getElementById('active-chunks-text').textContent = `切块 608/608 完工 | 融合 ${active.merged_entities_count || 0} 实体`;
-        if (active.last_merged_entity) {
-          document.getElementById('active-speed-text').textContent = `正在融合: ${active.last_merged_entity}`;
-        }
-      } else if (active.stage_code === 'embedding') {
-        activeBadgeEl.innerHTML = `⚡ 阶段 3: embo-01 向量生成与落盘中`;
+
+        step1.className = 'step-item completed';
+        badge1.textContent = '✓';
+        document.getElementById('step-desc-1').textContent = `切块抽取已完成 (${chunkTotal}/${chunkTotal} 块)`;
+
+        step2.className = 'step-item active';
+        document.getElementById('step-desc-2').textContent = active.last_merged_entity ? `正在融合: ${active.last_merged_entity}` : `实体对齐与关系合并中...`;
+
+        step3.className = 'step-item';
+        document.getElementById('step-desc-3').textContent = `等待实体消歧完成`;
+
+        document.getElementById('active-chunks-text').textContent = `${chunkTotal} / ${chunkTotal}`;
+        document.getElementById('active-chunks-sub').textContent = `切块已 100% 抽取完毕`;
+        document.getElementById('active-entrel-text').textContent = `${fmtNum(entCount)} 实体 / ${fmtNum(relCount)} 关系`;
+        document.getElementById('active-entrel-sub').textContent = `阶段 1 累计产出`;
+        document.getElementById('active-merged-text').textContent = `${mrgCount} 个核心实体`;
+        document.getElementById('active-merged-sub').textContent = active.last_merged_entity ? `正在融合: ${active.last_merged_entity}` : `跨块对齐提炼中`;
+        document.getElementById('active-vdb-status').textContent = `等待阶段 2`;
+        document.getElementById('active-vdb-status').style.color = 'var(--text-dim)';
+
+      } else if (stageCode === 'embedding') {
+        activeBadgeEl.innerHTML = `⚡ 阶段 3/3: 向量嵌入计算落盘 (embo-01 向量写入)`;
         activeBadgeEl.className = 'badge processing';
-        document.getElementById('active-chunks-text').textContent = `图谱实体融合已就绪，正在计算向量`;
+
+        step1.className = 'step-item completed';
+        badge1.textContent = '✓';
+        step2.className = 'step-item completed';
+        badge2.textContent = '✓';
+        step3.className = 'step-item active';
+
+        document.getElementById('step-desc-1').textContent = `切块抽取完成 (${chunkTotal} 块)`;
+        document.getElementById('step-desc-2').textContent = `实体消歧就绪 (${mrgCount} 实体)`;
+        document.getElementById('step-desc-3').textContent = `embo-01 批量向量计算与写入中`;
+
+        document.getElementById('active-chunks-text').textContent = `${chunkTotal} / ${chunkTotal}`;
+        document.getElementById('active-chunks-sub').textContent = `阶段 1 完工 (100%)`;
+        document.getElementById('active-entrel-text').textContent = `${fmtNum(entCount)} 实体 / ${fmtNum(relCount)} 关系`;
+        document.getElementById('active-entrel-sub').textContent = `阶段 1 产出`;
+        document.getElementById('active-merged-text').textContent = `${mrgCount} 个核心实体`;
+        document.getElementById('active-merged-sub').textContent = `阶段 2 融合完毕`;
+        document.getElementById('active-vdb-status').textContent = `写入 NanoVectorDB`;
+        document.getElementById('active-vdb-status').style.color = 'var(--cyan)';
+
+      } else if (stageCode === 'completed') {
+        activeBadgeEl.innerHTML = `✅ 已完成入库 (阶段 1~3 全部就绪)`;
+        activeBadgeEl.className = 'badge completed';
+
+        step1.className = 'step-item completed';
+        badge1.textContent = '✓';
+        step2.className = 'step-item completed';
+        badge2.textContent = '✓';
+        step3.className = 'step-item completed';
+        badge3.textContent = '✓';
+
+        document.getElementById('step-desc-1').textContent = `切块抽取完成 (${chunkTotal} 块)`;
+        document.getElementById('step-desc-2').textContent = `实体消歧完毕`;
+        document.getElementById('step-desc-3').textContent = `向量库写入完成`;
+
+        document.getElementById('active-chunks-text').textContent = `${chunkTotal} / ${chunkTotal}`;
+        document.getElementById('active-chunks-sub').textContent = `阶段 1 完工 (100%)`;
+        document.getElementById('active-entrel-text').textContent = `${fmtNum(entCount)} 实体 / ${fmtNum(relCount)} 关系`;
+        document.getElementById('active-entrel-sub').textContent = `阶段 1 产出`;
+        document.getElementById('active-merged-text').textContent = `${mrgCount} 个核心实体`;
+        document.getElementById('active-merged-sub').textContent = `阶段 2 融合完毕`;
+        document.getElementById('active-vdb-status').textContent = `已落盘入库`;
+        document.getElementById('active-vdb-status').style.color = 'var(--green)';
+
       } else {
-        document.getElementById('active-chunks-text').textContent = `${active.chunk_done} / ${active.chunk_total}`;
-        document.getElementById('active-speed-text').textContent = `~${active.speed_sec_per_chunk}s / 块`;
+        // Default: extracting (Stage 1)
+        activeBadgeEl.innerHTML = `🔄 阶段 1/3: 文本切块实体抽取 (${chunkDone}/${chunkTotal} 块, ${chunkPct}%)`;
+        activeBadgeEl.className = 'badge processing';
+
+        step1.className = 'step-item active';
+        document.getElementById('step-desc-1').textContent = `正在抽取: ${chunkDone} / ${chunkTotal} (${chunkPct}%)`;
+        document.getElementById('step-desc-2').textContent = `等待阶段 1 完成后启动`;
+        document.getElementById('step-desc-3').textContent = `等待阶段 2 完成后启动`;
+
+        document.getElementById('active-chunks-text').textContent = `${chunkDone} / ${chunkTotal}`;
+        document.getElementById('active-chunks-sub').textContent = `切块抽取进度: ${chunkPct}%`;
+        document.getElementById('active-entrel-text').textContent = `${fmtNum(entCount)} 实体 / ${fmtNum(relCount)} 关系`;
+        document.getElementById('active-entrel-sub').textContent = `阶段 1 实时产出图谱元素`;
+        document.getElementById('active-merged-text').textContent = `未开始`;
+        document.getElementById('active-merged-sub').textContent = `等待阶段 1 切块完毕`;
+        document.getElementById('active-vdb-status').textContent = `等待阶段 2`;
+        document.getElementById('active-vdb-status').style.color = 'var(--text-dim)';
       }
 
-      document.getElementById('active-pct-text').textContent = `${active.chunk_pct}%`;
+      document.getElementById('active-speed-text').textContent = active.speed_sec_per_chunk ? `~${active.speed_sec_per_chunk} s / 块` : '--';
       document.getElementById('active-eta-text').textContent = active.eta_formatted || '--';
-      document.getElementById('active-chunk-bar').style.width = `${Math.min(100, active.chunk_pct)}%`;
 
-      // 4. Knowledge Graph Stats
-      const kg = data.knowledge_graph || {};
-      document.getElementById('stat-ent').textContent = fmtNum(kg.entities_extracted);
-      document.getElementById('stat-rel').textContent = fmtNum(kg.relations_extracted);
-      document.getElementById('stat-cache').textContent = fmtNum(kg.cache_entries);
+      const overallPct = active.overall_pct || active.chunk_pct || 0;
+      document.getElementById('active-overall-pct').textContent = `${overallPct}%`;
+      document.getElementById('active-chunk-bar').style.width = `${Math.min(100, overallPct)}%`;
 
       // 5. POC Target Progress
       const poc = data.poc || {};
@@ -853,6 +1101,8 @@
         let badgeHtml = '';
         if (b.status === 'completed') {
           badgeHtml = '<span class="badge completed">✅ 已完成</span>';
+        } else if (b.status === 'cached_pending') {
+          badgeHtml = '<span class="badge processing" style="color:var(--amber);border-color:rgba(245,158,11,0.4)">📦 抽取完成(待落盘)</span>';
         } else if (b.status === 'merging') {
           badgeHtml = '<span class="badge processing" style="color:var(--purple);border-color:rgba(168,85,247,0.4)">🔄 实体融合中</span>';
         } else if (b.status === 'embedding') {
@@ -867,7 +1117,7 @@
 
         const chunkInfo = b.status === 'completed' 
           ? `${b.chunks_total} 块 (100%)` 
-          : (b.status === 'queued' ? '等待排队' : (b.status === 'merging' ? `608/608 (融合中)` : `${b.chunks_done} / ${b.chunks_total} (${b.progress_pct}%)`));
+          : (b.status === 'cached_pending' ? '608 块已缓存' : (b.status === 'queued' ? '等待排队' : (b.status === 'merging' ? `融合中` : `${b.chunks_done} / ${b.chunks_total} (${b.progress_pct}%)`)));
 
         const entRelInfo = b.entities && b.entities !== '-'
           ? `${fmtNum(b.entities)} 实体 / ${fmtNum(b.relations)} 关系`
