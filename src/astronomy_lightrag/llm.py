@@ -106,9 +106,11 @@ def get_minimax_embedding_func(
         "Content-Type": "application/json"
     }
 
+    embedding_lock = asyncio.Lock()
+
     async def embedding_call(texts: List[str], **kwargs) -> np.ndarray:
         all_vectors = []
-        batch_size = 10
+        batch_size = 8
         logger.info(f"🚀 [Embedding] Vectorizing {len(texts)} chunks via {model}...")
         async with httpx.AsyncClient(timeout=60.0) as client:
             for i in range(0, len(texts), batch_size):
@@ -118,15 +120,17 @@ def get_minimax_embedding_func(
                     "texts": batch,
                     "type": "db"
                 }
-                max_retries = 8
+                max_retries = 15
+                success = False
                 for attempt in range(max_retries):
                     try:
-                        r = await client.post(f"{base_url}/embeddings", headers=headers, json=payload)
+                        async with embedding_lock:
+                            r = await client.post(f"{base_url}/embeddings", headers=headers, json=payload)
                         r.raise_for_status()
                         data = r.json()
                         base_resp = data.get("base_resp", {})
                         if base_resp.get("status_code") == 1002:  # RPM rate limit exceeded
-                            wait_sec = 2.0 * (attempt + 1)
+                            wait_sec = min(30.0, 3.0 * (attempt + 1))
                             logger.warning(
                                 f"⚠️ [Embedding] MiniMax RPM rate limit reached (1002). "
                                 f"Backing off for {wait_sec:.1f}s (attempt {attempt+1}/{max_retries})..."
@@ -138,14 +142,18 @@ def get_minimax_embedding_func(
                         if not vectors:
                             raise ValueError(f"Minimax embedding returned no vectors: {data}")
                         all_vectors.extend(vectors)
-                        await asyncio.sleep(0.15)  # Slight throttle to prevent bursting RPM
+                        success = True
+                        await asyncio.sleep(0.25)  # Throttle to prevent bursting RPM
                         break
                     except (httpx.RequestError, httpx.HTTPStatusError) as net_err:
                         if attempt == max_retries - 1:
                             raise
-                        wait_sec = 2.0 * (attempt + 1)
+                        wait_sec = min(30.0, 3.0 * (attempt + 1))
                         logger.warning(f"⚠️ [Embedding] HTTP/Network error: {net_err}. Retrying in {wait_sec:.1f}s...")
                         await asyncio.sleep(wait_sec)
+
+                if not success:
+                    raise RuntimeError(f"MiniMax embedding failed to vectorize batch after {max_retries} attempts.")
 
         return np.array(all_vectors, dtype=np.float32)
 
