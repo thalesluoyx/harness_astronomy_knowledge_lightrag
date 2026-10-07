@@ -9,7 +9,7 @@ import sys
 import json
 import time
 import glob
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from flask import Flask, Response, jsonify, send_from_directory, request
 
@@ -166,36 +166,83 @@ def parse_log_stats(log_path):
     return stats
 
 
+def get_window_bounds(t: float):
+    """
+    Calculate start/end timestamps of the quota window aligned to daily clock hours:
+    - 00:00 - 05:00 (5h)
+    - 05:00 - 10:00 (5h)
+    - 10:00 - 15:00 (5h)
+    - 15:00 - 20:00 (5h)
+    - 20:00 - 00:00 (4h, until midnight)
+    """
+    dt = datetime.fromtimestamp(t)
+    today_start = dt.replace(hour=0, minute=0, second=0, microsecond=0)
+    hour = dt.hour
+
+    if 0 <= hour < 5:
+        start_dt = today_start
+        end_dt = today_start.replace(hour=5)
+        slot_label = "00:00 - 05:00 (5h 窗口)"
+        slot_hours = 5
+    elif 5 <= hour < 10:
+        start_dt = today_start.replace(hour=5)
+        end_dt = today_start.replace(hour=10)
+        slot_label = "05:00 - 10:00 (5h 窗口)"
+        slot_hours = 5
+    elif 10 <= hour < 15:
+        start_dt = today_start.replace(hour=10)
+        end_dt = today_start.replace(hour=15)
+        slot_label = "10:00 - 15:00 (5h 窗口)"
+        slot_hours = 5
+    elif 15 <= hour < 20:
+        start_dt = today_start.replace(hour=15)
+        end_dt = today_start.replace(hour=20)
+        slot_label = "15:00 - 20:00 (5h 窗口)"
+        slot_hours = 5
+    else:  # 20 <= hour < 24
+        start_dt = today_start.replace(hour=20)
+        end_dt = today_start + timedelta(days=1)
+        slot_label = "20:00 - 00:00 (4h 晚间窗口)"
+        slot_hours = 4
+
+    return start_dt.timestamp(), end_dt.timestamp(), slot_label, slot_hours
+
+
 def get_token_state():
-    """Reads token tracker state."""
+    """Reads token tracker state aligned with fixed daily clock windows."""
+    now = time.time()
+    start_ts, end_ts, slot_label, slot_hours = get_window_bounds(now)
+    seconds_left = max(0, int(end_ts - now))
+
     state = {
         "window_tokens": 0,
-        "window_start": time.time(),
+        "window_start": start_ts,
         "monthly_tokens": 0,
         "window_quota": WINDOW_QUOTA,
         "window_soft_limit": WINDOW_SOFT_LIMIT,
         "window_pct": 0.0,
-        "seconds_until_reset": 0,
-        "reset_time_str": "--:--:--"
+        "seconds_until_reset": seconds_left,
+        "reset_time_str": datetime.fromtimestamp(end_ts).strftime("%Y-%m-%d %H:%M:%S"),
+        "slot_label": slot_label,
+        "slot_hours": slot_hours,
+        "is_limit_reached": False,
     }
     token_file = DATA_DIR / "token_tracker_state.json"
     if token_file.exists():
         try:
             data = json.loads(token_file.read_text(encoding="utf-8"))
-            state["window_tokens"] = data.get("window_tokens", 0)
-            state["window_start"] = data.get("window_start", time.time())
+            saved_start = data.get("window_start", 0)
+            # If the saved state is from the current clock window, use the recorded tokens
+            if abs(saved_start - start_ts) < 1800:
+                state["window_tokens"] = data.get("window_tokens", 0)
+            else:
+                state["window_tokens"] = 0
             state["monthly_tokens"] = data.get("monthly_tokens", 0)
         except Exception:
             pass
 
-    # Calculate reset countdown
-    window_start = state["window_start"]
-    now = time.time()
-    next_reset = window_start + WINDOW_DURATION
-    seconds_left = max(0, int(next_reset - now))
-    state["seconds_until_reset"] = seconds_left
-    state["reset_time_str"] = datetime.fromtimestamp(next_reset).strftime("%Y-%m-%d %H:%M:%S")
     state["window_pct"] = round(state["window_tokens"] / WINDOW_SOFT_LIMIT * 100, 2)
+    state["is_limit_reached"] = state["window_tokens"] >= WINDOW_SOFT_LIMIT
     return state
 
 
@@ -412,7 +459,7 @@ def get_dashboard_state():
             "est_days": est_full_corpus_days
         },
         "system": {
-            "status": "paused_quota" if log_stats["is_waiting_reset"] else "running",
+            "status": "paused_quota" if (log_stats["is_waiting_reset"] or token_state["is_limit_reached"]) else "running",
             "log_file": log_path.name if log_path else None,
             "last_log_line": log_stats["last_log_line"]
         }

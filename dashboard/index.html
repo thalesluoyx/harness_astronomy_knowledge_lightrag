@@ -633,11 +633,11 @@
   <main>
     <!-- Section 1: System Macro Metrics (3 Cards) -->
     <div class="metrics-grid">
-      <!-- Card 1: 5h Token Quota -->
+      <!-- Card 1: Daily Token Quota Window -->
       <div class="metric-card">
         <div class="card-label">
-          <span>⚡ 5小时 Token 窗口配额 (MiniMax-M3)</span>
-          <span class="icon" title="5小时动态滑动窗口限制">🛡️</span>
+          <span>⚡ 时段 Token 配额 (<span id="tok-slot-badge" style="color:var(--cyan)">--</span>)</span>
+          <span class="icon" title="每日从0点起按固定时段刷新">🛡️</span>
         </div>
         <div class="token-gauge-numbers">
           <span id="tok-used" class="card-value">--</span>
@@ -647,20 +647,26 @@
           <div id="tok-bar" class="bar-fill" style="width: 0%"></div>
         </div>
         <div class="card-sub" id="tok-sub">
-          当前已使用 <b id="tok-pct">0.0%</b> | 额度上限: 540万 tokens | 月度累计: <span id="tok-monthly">--</span>
+          当前已使用 <b id="tok-pct">0.0%</b> | 窗口上限: 540万 tokens | 月度累计: <span id="tok-monthly">--</span>
+        </div>
+        <div style="margin-top:6px;font-size:0.7rem;color:var(--text-dim)">
+          ⏰ 每日轮转: 00-05 | 05-10 | 10-15 | 15-20 | 20-00 (末段4小时)
         </div>
       </div>
 
       <!-- Card 2: Reset Countdown -->
       <div class="metric-card">
         <div class="card-label">
-          <span>⏱️ 配额刷新倒计时</span>
+          <span>⏱️ 本时段重置倒计时</span>
           <span class="icon">⌛</span>
         </div>
         <div id="countdown" class="card-value" style="color:var(--amber)">--:--:--</div>
         <div class="card-sub">
           下次重置时间: <span id="reset-target" style="font-family:var(--mono);color:#fff">--</span>
           <div id="quota-status" style="margin-top:3px;font-size:0.75rem">🟢 管道正常提取中</div>
+        </div>
+        <div style="margin-top:6px;font-size:0.7rem;color:var(--text-dim)">
+          🔒 达 486 万 (90%) 触发安全熔断，时段切换秒级自动恢复
         </div>
       </div>
 
@@ -915,6 +921,9 @@
       document.getElementById('tok-used').textContent = fmtNum(used);
       document.getElementById('tok-pct').textContent = pct.toFixed(1) + '%';
       document.getElementById('tok-monthly').textContent = fmtNum(tok.monthly_tokens) + ' tokens';
+      if (document.getElementById('tok-slot-badge')) {
+        document.getElementById('tok-slot-badge').textContent = tok.slot_label || '每日时段';
+      }
 
       const tokBar = document.getElementById('tok-bar');
       tokBar.style.width = Math.min(100, pct) + '%';
@@ -934,9 +943,10 @@
       const liveText = document.getElementById('live-text');
 
       if (isQuotaPaused) {
-        quotaStatusEl.innerHTML = '⏸️ <span style="color:var(--amber)">已达配额软限，熔断等待窗口重置</span>';
+        const resumeClock = tok.reset_time_str ? tok.reset_time_str.split(' ')[1] : '下个时段';
+        quotaStatusEl.innerHTML = `⏸️ <span style="color:var(--amber)">已达 90% 软限，安全等待至 ${resumeClock} 自动恢复</span>`;
         liveBadge.className = 'live-badge paused';
-        liveText.textContent = '配额等待中';
+        liveText.textContent = `等待至 ${resumeClock}`;
       } else {
         quotaStatusEl.innerHTML = '🟢 <span style="color:var(--green)">管道正常提取中</span>';
         liveBadge.className = 'live-badge';
