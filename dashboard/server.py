@@ -83,13 +83,13 @@ def parse_log_stats(log_path):
             stats["last_log_line"] = lines[-1]
 
         # Check for waiting status
-        wait_matches = re.findall(r"Waiting ([\d\.]+)s until next window reset", content)
+        wait_matches = re.findall(r"remaining ([\d\.]+)m", content)
         if wait_matches:
             # Check if this wait happened recently in the last 20 lines
             recent_text = "\n".join(lines[-25:])
-            if "Waiting" in recent_text and "until next window reset" in recent_text:
+            if "Pausing pipeline until" in recent_text:
                 stats["is_waiting_reset"] = True
-                stats["wait_remaining_sec"] = float(wait_matches[-1])
+                stats["wait_remaining_sec"] = float(wait_matches[-1]) * 60
 
         # Check chunk extraction matches
         # Format: Chunk 448 of 608 extracted 17 Ent + 16 Rel
@@ -114,10 +114,10 @@ def parse_log_stats(log_path):
             stats["stage_label"] = "阶段 3: embo-01 向量计算与落盘 (Vector DB Flush)"
         elif stats["active_chunk"] >= stats["total_chunks"] and stats["total_chunks"] > 0:
             stats["stage_code"] = "merging"
-            stats["stage_label"] = "阶段 2.5: 跨切块实体消歧融合中 (LLM Merging)"
+            stats["stage_label"] = "阶段 2: 跨切块实体消歧融合中 (LLM Merging)"
         else:
             stats["stage_code"] = "extracting"
-            stats["stage_label"] = f"阶段 2: 文本切块抽取 ({stats['active_chunk']}/{stats['total_chunks']})"
+            stats["stage_label"] = f"阶段 1: 文本切块实体抽取 ({stats['active_chunk']}/{stats['total_chunks']})"
 
         # Calculate average chunk speed from timestamps of the last 15 chunk extractions
         ts_pattern = re.compile(r"(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}).*?Chunk \d+ of \d+ extracted")
