@@ -3,7 +3,10 @@ __pycache__/
 .pytest_cache/
 .env
 data/
+data_old/
 lightrag_workspace/
+lightrag_workspace_old_1536/
 logs/
 *.log
+scratch/
 

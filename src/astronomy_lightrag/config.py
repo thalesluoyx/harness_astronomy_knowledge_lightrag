@@ -30,8 +30,23 @@ TARGET_BOOKS = [
 LLM_API_KEY = os.getenv("LLM_API_KEY") or os.getenv("OPENAI_API_KEY", "")
 LLM_BASE_URL = os.getenv("LLM_BASE_URL") or os.getenv("OPENAI_BASE_URL", "https://api.minimaxi.com/v1")
 LLM_MODEL = os.getenv("LLM_MODEL") or os.getenv("LLM_MODEL_NAME", "MiniMax-M3")
-EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "embo-01")
-EMBEDDING_DIM = int(os.getenv("EMBEDDING_DIM", "1536"))
+
+# Embedding Configuration: "local" (default, 0 API cost, 500+ chunks/sec) or "online" (MiniMax embo-01)
+EMBEDDING_ENGINE = os.getenv("EMBEDDING_ENGINE", "local").lower()
+LOCAL_EMBEDDING_MODEL = os.getenv("LOCAL_EMBEDDING_MODEL", "BAAI/bge-small-zh-v1.5")
+LOCAL_EMBEDDING_BACKEND = os.getenv("LOCAL_EMBEDDING_BACKEND", "fastembed")
+LOCAL_EMBEDDING_THREADS = int(os.getenv("LOCAL_EMBEDDING_THREADS", "8"))
+
+if EMBEDDING_ENGINE == "local":
+    EMBEDDING_MODEL = LOCAL_EMBEDDING_MODEL
+    # BAAI/bge-small-zh-v1.5 dimension is 512
+    EMBEDDING_DIM = int(os.getenv("EMBEDDING_DIM", "512"))
+else:
+    EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "embo-01")
+    EMBEDDING_DIM = int(os.getenv("EMBEDDING_DIM", "1536"))
+
+# Concurrency: Stage 1 extraction concurrency (bumped to 8-12 when embedding is local)
+MAX_ASYNC = int(os.getenv("MAX_ASYNC", "8"))
 
 # Token Plan & Rate Limiting Configuration
 # MiniMax 5h window: default upgraded to 5.4M tokens based on real measurement (64% = 3.45M)

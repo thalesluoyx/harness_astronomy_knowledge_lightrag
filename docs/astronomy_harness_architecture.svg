@@ -1,0 +1,298 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1500" height="860" viewBox="0 0 1500 860" font-family="'Segoe UI', 'PingFang SC', 'Microsoft YaHei', Arial, sans-serif">
+
+  <defs>
+    <marker id="arrowBlue" markerWidth="9" markerHeight="9" refX="7" refY="3.5" orient="auto">
+      <path d="M0,0 L0,7 L9,3.5 z" fill="#90CAF9"/>
+    </marker>
+    <marker id="arrowOrange" markerWidth="9" markerHeight="9" refX="7" refY="3.5" orient="auto">
+      <path d="M0,0 L0,7 L9,3.5 z" fill="#FF8F00"/>
+    </marker>
+    <marker id="arrowGreen" markerWidth="9" markerHeight="9" refX="7" refY="3.5" orient="auto">
+      <path d="M0,0 L0,7 L9,3.5 z" fill="#69F0AE"/>
+    </marker>
+    <marker id="arrowCyan" markerWidth="9" markerHeight="9" refX="7" refY="3.5" orient="auto">
+      <path d="M0,0 L0,7 L9,3.5 z" fill="#4FC3F7"/>
+    </marker>
+    <marker id="arrowRed" markerWidth="9" markerHeight="9" refX="7" refY="3.5" orient="auto">
+      <path d="M0,0 L0,7 L9,3.5 z" fill="#EF5350"/>
+    </marker>
+    <filter id="shadow" x="-5%" y="-5%" width="115%" height="115%">
+      <feDropShadow dx="2" dy="2" stdDeviation="3" flood-color="#00000033"/>
+    </filter>
+  </defs>
+
+  <!-- ═══════════════════════════════════════════ BACKGROUND ═══════════════════════════════════════════ -->
+  <rect width="1500" height="860" fill="#ECEFF1"/>
+
+  <!-- ═══════════════════════════════════════════ TITLE ═══════════════════════════════════════════ -->
+  <text x="750" y="37" text-anchor="middle" font-size="24" font-weight="bold" fill="#1A237E">天文知识图谱全量构建 · 双层 ReAct Harness 架构</text>
+  <text x="750" y="57" text-anchor="middle" font-size="12" fill="#546E7A">Dual-Loop ReAct Harness · Outer Loop (Book Orchestrator) + Inner Loop (Stage 1+2 ‖ Stage 3 Parallel Pipeline)</text>
+
+  <!-- ═══════════════════════════════════════════ OUTER LOOP ═══════════════════════════════════════════ -->
+  <rect x="12" y="68" width="308" height="624" rx="16" fill="#1565C0" filter="url(#shadow)"/>
+  <circle cx="38" cy="88" r="10" fill="#42A5F5"/>
+  <text x="55" y="93" font-size="15" font-weight="bold" fill="white">外环 Outer Loop</text>
+  <text x="160" y="110" text-anchor="middle" font-size="10" fill="#90CAF9">Book Orchestrator · 全局进度调度</text>
+
+  <!-- OL Step 1: Scan & Plan -->
+  <rect x="28" y="120" width="276" height="62" rx="10" fill="#1976D2" filter="url(#shadow)"/>
+  <text x="166" y="142" text-anchor="middle" font-size="13" font-weight="bold" fill="white">📋  Scan &amp; Plan</text>
+  <text x="166" y="158" text-anchor="middle" font-size="10" fill="#BBDEFB">扫描 bilingual_output/ 全部 155 本书</text>
+  <text x="166" y="172" text-anchor="middle" font-size="9" fill="#90CAF9">读取 ingest_state.json · 排除已完成书目 · 排队未处理</text>
+  <line x1="166" y1="182" x2="166" y2="200" stroke="#90CAF9" stroke-width="2" marker-end="url(#arrowBlue)"/>
+
+  <!-- OL Step 2: Init State -->
+  <rect x="28" y="202" width="276" height="62" rx="10" fill="#1976D2" filter="url(#shadow)"/>
+  <text x="166" y="224" text-anchor="middle" font-size="13" font-weight="bold" fill="white">🔄  Init State</text>
+  <text x="166" y="240" text-anchor="middle" font-size="10" fill="#BBDEFB">加载断点 · 计算当前 5h 窗口余量</text>
+  <text x="166" y="254" text-anchor="middle" font-size="9" fill="#90CAF9">Chunk-Level Checkpoint · 校准 Token 配额上限</text>
+  <line x1="166" y1="264" x2="166" y2="282" stroke="#90CAF9" stroke-width="2" marker-end="url(#arrowBlue)"/>
+
+  <!-- OL Step 3: Launch Batch -->
+  <rect x="28" y="284" width="276" height="62" rx="10" fill="#1976D2" filter="url(#shadow)"/>
+  <text x="166" y="306" text-anchor="middle" font-size="13" font-weight="bold" fill="white">🚀  Launch Batch</text>
+  <text x="166" y="322" text-anchor="middle" font-size="10" fill="#FFCC80">⚠ 严格串行：每次仅派发 1 本书入 Stage 1+2</text>
+  <text x="166" y="336" text-anchor="middle" font-size="9" fill="#90CAF9">Budget-Aware · 预估 Token 用量 · Token Plan 单窗口限额约束</text>
+  <!-- Arrow to inner loop -->
+  <line x1="304" y1="315" x2="344" y2="315" stroke="#FF8F00" stroke-width="2.5" marker-end="url(#arrowOrange)"/>
+  <text x="322" y="308" text-anchor="middle" font-size="9" fill="#FF8F00" font-weight="bold">派发</text>
+  <line x1="166" y1="346" x2="166" y2="364" stroke="#90CAF9" stroke-width="2" marker-end="url(#arrowBlue)"/>
+
+  <!-- OL Step 4: Monitor -->
+  <rect x="28" y="366" width="276" height="62" rx="10" fill="#1976D2" filter="url(#shadow)"/>
+  <text x="166" y="388" text-anchor="middle" font-size="13" font-weight="bold" fill="white">⏳  Monitor</text>
+  <text x="166" y="404" text-anchor="middle" font-size="10" fill="#BBDEFB">等待内环 Stage 3 完成信号</text>
+  <text x="166" y="418" text-anchor="middle" font-size="9" fill="#90CAF9">轮询事件 · 实时更新 Dashboard · 收集书籍成果</text>
+  <!-- Feedback signal in (from Stage 3 complete) -->
+  <line x1="166" y1="428" x2="166" y2="446" stroke="#90CAF9" stroke-width="2" marker-end="url(#arrowBlue)"/>
+
+  <!-- OL Step 5: Evaluate Milestone & Quality Check -->
+  <rect x="28" y="448" width="276" height="62" rx="10" fill="#1976D2" filter="url(#shadow)"/>
+  <text x="166" y="470" text-anchor="middle" font-size="13" font-weight="bold" fill="white">✅  Evaluate &amp; Quality Check</text>
+  <text x="166" y="486" text-anchor="middle" font-size="10" fill="#BBDEFB">校验图谱拓扑 · 抽样 LLM 质检 · 生成 Report</text>
+  <text x="166" y="500" text-anchor="middle" font-size="9" fill="#90CAF9">总分 &gt; 80 计里程碑 | &lt; 80 触发 bilingual_common 微信告警</text>
+  <line x1="166" y1="510" x2="166" y2="528" stroke="#90CAF9" stroke-width="2" marker-end="url(#arrowBlue)"/>
+
+  <!-- OL Step 6: Decide -->
+  <rect x="52" y="530" width="228" height="62" rx="10" fill="#0D47A1" filter="url(#shadow)"/>
+  <text x="166" y="552" text-anchor="middle" font-size="13" font-weight="bold" fill="white">🔀  Decide</text>
+  <text x="166" y="568" text-anchor="middle" font-size="10" fill="#BBDEFB">配额足够 → 继续下批次</text>
+  <text x="166" y="582" text-anchor="middle" font-size="9" fill="#90CAF9">窗口耗尽 → 休眠等待 | 全部完成 → Done</text>
+  <!-- Loop back arrow (left side) -->
+  <path d="M52,561 Q18,561 18,450 Q18,310 28,310" stroke="#EF5350" stroke-width="2" fill="none" stroke-dasharray="6,3" marker-end="url(#arrowRed)"/>
+  <text x="8" y="455" font-size="9" fill="#EF5350" transform="rotate(-90,8,455)">循环继续</text>
+  <line x1="166" y1="592" x2="166" y2="610" stroke="#90CAF9" stroke-width="2" marker-end="url(#arrowBlue)"/>
+
+  <!-- OL Step 7: Smart Sleep -->
+  <rect x="28" y="612" width="276" height="40" rx="8" fill="#0D47A1"/>
+  <text x="166" y="629" text-anchor="middle" font-size="11" font-weight="bold" fill="#64B5F6">💤  Smart Sleep · 等待下一 5h 窗口</text>
+  <text x="166" y="644" text-anchor="middle" font-size="8.5" fill="#64B5F6">自动对齐 MiniMax 时间节点 (00/05/10/15/20h CST)</text>
+  <line x1="166" y1="652" x2="166" y2="664" stroke="#90CAF9" stroke-width="2" marker-end="url(#arrowBlue)"/>
+
+  <!-- OL Done -->
+  <rect x="76" y="665" width="180" height="16" rx="0" fill="none"/>
+  <rect x="66" y="664" width="200" height="28" rx="14" fill="#00C853" filter="url(#shadow)"/>
+  <text x="166" y="683" text-anchor="middle" font-size="12" font-weight="bold" fill="white">🎉  Done · 155 / 155</text>
+
+  <!-- ═══════════════════════════════════════════ INNER LOOP ═══════════════════════════════════════════ -->
+  <rect x="334" y="68" width="1154" height="624" rx="16" fill="#0A2744" filter="url(#shadow)"/>
+  <circle cx="360" cy="88" r="10" fill="#4CAF50"/>
+  <text x="378" y="93" font-size="15" font-weight="bold" fill="white">内环 Inner Loop — 双轨并行流水线</text>
+  <text x="910" y="110" text-anchor="middle" font-size="10" fill="#81D4FA">Track A · Stage 1+2: MiniMax-M3 LLM  ‖  Track B · Stage 3: 天贝小主机 bge-m3 本地 Embedding</text>
+
+  <!-- ─────── TRACK A background ─────── -->
+  <rect x="348" y="120" width="546" height="556" rx="12" fill="#1B5E20" filter="url(#shadow)"/>
+  <text x="621" y="145" text-anchor="middle" font-size="13" font-weight="bold" fill="white">🟩  Track A · Stage 1 + 2  (MiniMax-M3 · LLM 图谱构建)</text>
+  <text x="621" y="160" text-anchor="middle" font-size="10" fill="#FFCC80">⚠ 单书严格串行 — Token Plan 限额约束，任意时刻仅处理 1 本书，绝不并发两本书入此阶段</text>
+
+  <!-- Stage 1 box -->
+  <rect x="362" y="168" width="518" height="138" rx="10" fill="#2E7D32" filter="url(#shadow)"/>
+  <text x="621" y="190" text-anchor="middle" font-size="12" font-weight="bold" fill="white">Stage 1 · 切块并发抽取  (max_async = 8~12)</text>
+  <text x="621" y="206" text-anchor="middle" font-size="10" fill="#C8E6C9">📄 加载 bilingual MD → 文本净化 (乱码/敏感词) → Chunk 切分</text>
+  <!-- Worker boxes -->
+  <rect x="372" y="215" width="86" height="30" rx="6" fill="#388E3C"/>
+  <text x="415" y="235" text-anchor="middle" font-size="9" fill="white">⚙ Worker 1</text>
+  <rect x="466" y="215" width="86" height="30" rx="6" fill="#388E3C"/>
+  <text x="509" y="235" text-anchor="middle" font-size="9" fill="white">⚙ Worker 2</text>
+  <rect x="560" y="215" width="86" height="30" rx="6" fill="#388E3C"/>
+  <text x="603" y="235" text-anchor="middle" font-size="9" fill="white">⚙ Worker 3</text>
+  <rect x="656" y="215" width="86" height="30" rx="6" fill="#388E3C"/>
+  <text x="699" y="235" text-anchor="middle" font-size="9" fill="white">⚙ Worker 4</text>
+  <rect x="752" y="215" width="86" height="30" rx="6" fill="#388E3C" opacity="0.6"/>
+  <text x="795" y="231" text-anchor="middle" font-size="11" fill="#A5D6A7">···</text>
+  <text x="795" y="244" text-anchor="middle" font-size="8" fill="#A5D6A7">~N</text>
+  <text x="621" y="263" text-anchor="middle" font-size="9" fill="#A5D6A7">TokenTracker 注入 · 422 敏感词自动跳过 (返回 &lt;|COMPLETE|&gt;) · Chunk-Level Checkpoint 哈希去重</text>
+  <text x="621" y="278" text-anchor="middle" font-size="9" fill="#A5D6A7">天体先验字典注入 Prompt · 专属 entity_types · 抽取结果写入 KV Cache</text>
+  <text x="621" y="295" text-anchor="middle" font-size="9" fill="#69F0AE">alias_map 毫秒级别名归一 → 消除孤立多译名节点</text>
+
+  <line x1="621" y1="306" x2="621" y2="326" stroke="#69F0AE" stroke-width="2" marker-end="url(#arrowGreen)"/>
+
+  <!-- Stage 2 box -->
+  <rect x="362" y="328" width="518" height="110" rx="10" fill="#2E7D32" filter="url(#shadow)"/>
+  <text x="621" y="350" text-anchor="middle" font-size="12" font-weight="bold" fill="white">Stage 2 · 实体融合 &amp; 图谱 Upsert</text>
+  <text x="621" y="366" text-anchor="middle" font-size="10" fill="#C8E6C9">LightRAG Entity Merge · 关系拓扑融合 · 共享实体消歧</text>
+  <text x="621" y="382" text-anchor="middle" font-size="9" fill="#A5D6A7">⚡ Bypass Full Attribution Purge · 仅做增量 Upsert (不触发全局重构)</text>
+  <text x="621" y="396" text-anchor="middle" font-size="9" fill="#A5D6A7">KV Store 写入 · Graph Store 持久化 · Entity / Relationship 落盘</text>
+  <text x="621" y="410" text-anchor="middle" font-size="9" fill="#69F0AE">✔ Entities + Relationships 图谱就绪 → 触发 Handoff Queue</text>
+  <text x="621" y="425" text-anchor="middle" font-size="8" fill="#A5D6A7">⚠ Token 达 95% → 自动暂停 · 等待下一窗口继续 (不丢失进度)</text>
+
+  <line x1="621" y1="438" x2="621" y2="458" stroke="#69F0AE" stroke-width="2" marker-end="url(#arrowGreen)"/>
+
+  <!-- ReAct inner cycle box -->
+  <rect x="362" y="460" width="518" height="100" rx="10" fill="#1B5E20" stroke="#69F0AE" stroke-width="1.5" stroke-dasharray="5,3"/>
+  <text x="621" y="479" text-anchor="middle" font-size="10" font-weight="bold" fill="#69F0AE">🧠  ReAct 自愈内循环 (单书级错误处理)</text>
+  <rect x="372" y="487" width="98" height="28" rx="6" fill="#388E3C"/>
+  <text x="421" y="506" text-anchor="middle" font-size="9" fill="white">💭 Thought</text>
+  <rect x="480" y="487" width="98" height="28" rx="6" fill="#388E3C"/>
+  <text x="529" y="506" text-anchor="middle" font-size="9" fill="white">🔍 Reflect</text>
+  <rect x="588" y="487" width="98" height="28" rx="6" fill="#388E3C"/>
+  <text x="637" y="506" text-anchor="middle" font-size="9" fill="white">⚡ Action</text>
+  <rect x="696" y="487" width="172" height="28" rx="6" fill="#388E3C"/>
+  <text x="782" y="506" text-anchor="middle" font-size="9" fill="white">👁 Observation · 更新状态</text>
+  <text x="621" y="548" text-anchor="middle" font-size="8.5" fill="#A5D6A7">422 → 跳过切块 | 402/1008 → 挂起等窗口 | 超时 → 重试 | 连续失败 → 跳书报警</text>
+
+  <line x1="621" y1="560" x2="621" y2="578" stroke="#69F0AE" stroke-width="2" marker-end="url(#arrowGreen)"/>
+
+  <!-- Handoff signal box -->
+  <rect x="362" y="580" width="518" height="72" rx="10" fill="#004D40" stroke="#4DB6AC" stroke-width="1.5" filter="url(#shadow)"/>
+  <text x="621" y="602" text-anchor="middle" font-size="11" font-weight="bold" fill="#80CBC4">📤  Stage 1+2 Complete → 写入 Handoff Queue</text>
+  <text x="621" y="618" text-anchor="middle" font-size="9" fill="#4DB6AC">payload: { book_id, entity_ids[], relationship_ids[], chunk_ids[] }</text>
+  <text x="621" y="634" text-anchor="middle" font-size="9" fill="#4DB6AC">Stage 3 Local Track 消费 ‖  外环同步开始处理下一本书 Stage 1+2</text>
+  <text x="621" y="648" text-anchor="middle" font-size="8.5" fill="#FF8F00">↑ 并行优化关键：书 N 的 Stage 3 本地运行时，书 N+1 的 Stage 1+2 已开始</text>
+
+  <!-- Arrow from Stage 1+2 Track to Queue -->
+  <line x1="880" y1="616" x2="940" y2="616" stroke="#FF8F00" stroke-width="3" marker-end="url(#arrowOrange)"/>
+
+  <!-- ─────── QUEUE ─────── -->
+  <rect x="940" y="530" width="112" height="190" rx="12" fill="#BF360C" filter="url(#shadow)"/>
+  <text x="996" y="553" text-anchor="middle" font-size="13" font-weight="bold" fill="white">📬</text>
+  <text x="996" y="568" text-anchor="middle" font-size="12" font-weight="bold" fill="white">Queue</text>
+  <text x="996" y="583" text-anchor="middle" font-size="9" fill="#FFCCBC">asyncio</text>
+  <line x1="940" y1="598" x2="1052" y2="598" stroke="#FF8F00" stroke-width="0.8" stroke-dasharray="3,2"/>
+  <text x="996" y="614" text-anchor="middle" font-size="8" fill="#FFAB91">book_id</text>
+  <text x="996" y="628" text-anchor="middle" font-size="8" fill="#FFAB91">entities[]</text>
+  <text x="996" y="642" text-anchor="middle" font-size="8" fill="#FFAB91">relations[]</text>
+  <text x="996" y="656" text-anchor="middle" font-size="8" fill="#FFAB91">chunk_ids[]</text>
+  <line x1="940" y1="668" x2="1052" y2="668" stroke="#FF8F00" stroke-width="0.8" stroke-dasharray="3,2"/>
+  <text x="996" y="683" text-anchor="middle" font-size="8" fill="#FF8A65">Stage 3 消费</text>
+  <text x="996" y="697" text-anchor="middle" font-size="8" fill="#FF8A65">→ 本地处理</text>
+  <text x="996" y="712" text-anchor="middle" font-size="8" fill="#FF8A65">无阻塞</text>
+
+  <!-- Arrow from Queue to Track B -->
+  <line x1="1052" y1="616" x2="1092" y2="616" stroke="#FF8F00" stroke-width="3" marker-end="url(#arrowOrange)"/>
+
+  <!-- ─────── PARALLEL label ─────── -->
+  <rect x="938" y="358" width="116" height="172" rx="10" fill="#E65100" opacity="0.92" filter="url(#shadow)"/>
+  <text x="996" y="380" text-anchor="middle" font-size="18" fill="white">⚡</text>
+  <text x="996" y="396" text-anchor="middle" font-size="11" font-weight="bold" fill="white">流水并行</text>
+  <line x1="960" y1="404" x2="1032" y2="404" stroke="white" stroke-width="0.8" opacity="0.5"/>
+  <text x="996" y="420" text-anchor="middle" font-size="8.5" fill="#FFE0B2">书 N · Stage 3</text>
+  <text x="996" y="433" text-anchor="middle" font-size="8.5" fill="#FFE0B2">本地向量化</text>
+  <text x="996" y="446" text-anchor="middle" font-size="8.5" fill="#FFCCBC">(0 Token 消耗)</text>
+  <text x="996" y="460" text-anchor="middle" font-size="10" fill="white">‖</text>
+  <text x="996" y="474" text-anchor="middle" font-size="8.5" fill="#FFE0B2">书 N+1 · Stage 1+2</text>
+  <text x="996" y="487" text-anchor="middle" font-size="8.5" fill="#FFE0B2">LLM 串行抽取</text>
+  <line x1="960" y1="496" x2="1032" y2="496" stroke="white" stroke-width="0.8" opacity="0.5"/>
+  <text x="996" y="510" text-anchor="middle" font-size="7.5" fill="#FFCCBC">Stage 1+2 始终只有</text>
+  <text x="996" y="522" text-anchor="middle" font-size="7.5" fill="#FFCCBC">1 本书在运行</text>
+
+  <!-- ─────── TRACK B background ─────── -->
+  <rect x="1092" y="120" width="384" height="556" rx="12" fill="#01579B" filter="url(#shadow)"/>
+  <text x="1284" y="145" text-anchor="middle" font-size="13" font-weight="bold" fill="white">🔷  Track B · Stage 3  (天贝小主机 · 本地 Embedding)</text>
+  <text x="1284" y="160" text-anchor="middle" font-size="10" fill="#B3E5FC">0 API 费用 · 0 速率限制 · 离线可用 · bge-m3 ONNX Runtime</text>
+
+  <!-- B Step 1 -->
+  <rect x="1106" y="168" width="356" height="88" rx="10" fill="#0277BD" filter="url(#shadow)"/>
+  <text x="1284" y="190" text-anchor="middle" font-size="12" font-weight="bold" fill="white">Step 1 · 消费 Handoff Queue</text>
+  <text x="1284" y="206" text-anchor="middle" font-size="10" fill="#B3E5FC">接收 Stage 1+2 完成 payload</text>
+  <text x="1284" y="222" text-anchor="middle" font-size="9" fill="#81D4FA">加载 entities / relationships / chunk 文本数据</text>
+  <text x="1284" y="238" text-anchor="middle" font-size="9" fill="#81D4FA">校验完整性 · 准备批量 Embedding 输入</text>
+  <text x="1284" y="250" text-anchor="middle" font-size="8.5" fill="#4FC3F7">💡 小主机通过局域网与主机共享 Queue</text>
+  <line x1="1284" y1="256" x2="1284" y2="276" stroke="#4FC3F7" stroke-width="2" marker-end="url(#arrowCyan)"/>
+
+  <!-- B Step 2 -->
+  <rect x="1106" y="278" width="356" height="110" rx="10" fill="#0277BD" filter="url(#shadow)"/>
+  <text x="1284" y="300" text-anchor="middle" font-size="12" font-weight="bold" fill="white">Step 2 · 本地 bge-m3 批量编码</text>
+  <text x="1284" y="316" text-anchor="middle" font-size="10" fill="#B3E5FC">ONNX Runtime / FastEmbed · CPU AVX2 直推</text>
+  <text x="1284" y="332" text-anchor="middle" font-size="9" fill="#81D4FA">利用 LPDDR5 8000MHz 超高频内存带宽</text>
+  <text x="1284" y="348" text-anchor="middle" font-size="9" fill="#81D4FA">约 60~100 块/秒 · entities + relations + chunks</text>
+  <text x="1284" y="364" text-anchor="middle" font-size="9" fill="#4FC3F7">可选: 680M DirectML 核显加速 (~100~150 块/秒)</text>
+  <text x="1284" y="378" text-anchor="middle" font-size="8.5" fill="#81D4FA">Ryzen 7 PRO 6850H · 24GB · 980 PRO ⭐⭐⭐⭐⭐</text>
+  <line x1="1284" y1="388" x2="1284" y2="408" stroke="#4FC3F7" stroke-width="2" marker-end="url(#arrowCyan)"/>
+
+  <!-- B Step 3 -->
+  <rect x="1106" y="410" width="356" height="100" rx="10" fill="#0277BD" filter="url(#shadow)"/>
+  <text x="1284" y="432" text-anchor="middle" font-size="12" font-weight="bold" fill="white">Step 3 · 向量持久化</text>
+  <text x="1284" y="448" text-anchor="middle" font-size="10" fill="#B3E5FC">写入 NanoVectorDB (当前) / LanceDB (升格)</text>
+  <text x="1284" y="464" text-anchor="middle" font-size="9" fill="#81D4FA">Entity 向量 · Relationship 向量 · Chunk 向量</text>
+  <text x="1284" y="480" text-anchor="middle" font-size="9" fill="#81D4FA">原子 Upsert · Chunk 级失败回滚 · 断点续传</text>
+  <text x="1284" y="496" text-anchor="middle" font-size="9" fill="#4FC3F7">预计 15~25 分钟完成 80,000 切块全量向量化</text>
+  <text x="1284" y="508" text-anchor="middle" font-size="8.5" fill="#B3E5FC">Samsung 980 PRO PCIe 4.0 · 7000MB/s · 0 I/O 瓶颈</text>
+  <line x1="1284" y1="510" x2="1284" y2="530" stroke="#4FC3F7" stroke-width="2" marker-end="url(#arrowCyan)"/>
+
+  <!-- B Step 4: Complete -->
+  <rect x="1106" y="532" width="356" height="80" rx="10" fill="#003D6E" stroke="#29B6F6" stroke-width="1.5" filter="url(#shadow)"/>
+  <text x="1284" y="554" text-anchor="middle" font-size="11" font-weight="bold" fill="#4FC3F7">✅  Stage 3 Complete</text>
+  <text x="1284" y="570" text-anchor="middle" font-size="9" fill="#81D4FA">更新 ingest_state.json · 全书入库 ✔</text>
+  <text x="1284" y="584" text-anchor="middle" font-size="9" fill="#81D4FA">发送完成事件 → 外环 Monitor</text>
+  <text x="1284" y="598" text-anchor="middle" font-size="8.5" fill="#FF8F00">Webhook 推送告警 (钉钉/微信/Telegram)</text>
+  <text x="1284" y="610" text-anchor="middle" font-size="8.5" fill="#4FC3F7">Dashboard 状态更新 · 里程碑计数 +1</text>
+
+  <!-- Stage 3 Complete → outer loop feedback -->
+  <line x1="1284" y1="612" x2="1284" y2="656" stroke="#4FC3F7" stroke-width="1.5" stroke-dasharray="5,3"/>
+  <line x1="1284" y1="656" x2="332" y2="656" stroke="#4FC3F7" stroke-width="1.5" stroke-dasharray="5,3"/>
+  <line x1="332" y1="656" x2="332" y2="397" stroke="#4FC3F7" stroke-width="1.5" stroke-dasharray="5,3"/>
+  <line x1="332" y1="397" x2="310" y2="397" stroke="#4FC3F7" stroke-width="1.5" stroke-dasharray="5,3" marker-end="url(#arrowCyan)"/>
+  <text x="810" y="672" text-anchor="middle" font-size="9" fill="#4FC3F7">完成信号 → 外环 Monitor 接收</text>
+
+  <!-- ═══════════════════════════════════════════ BOTTOM BARS ═══════════════════════════════════════════ -->
+  <!-- Alert bar -->
+  <rect x="12" y="706" width="735" height="52" rx="10" fill="#B71C1C" filter="url(#shadow)"/>
+  <text x="380" y="727" text-anchor="middle" font-size="11" font-weight="bold" fill="white">⚠️  统一自愈与人工兜底 (bilingual_common 微信告警)</text>
+  <text x="380" y="744" text-anchor="middle" font-size="9" fill="#FFCDD2">422 跳切块 · 1008 休眠等待 · 质量抽检得分 &lt; 80 分拦截 → 触发微信 Bot (ilinkai 长轮询)</text>
+  <text x="380" y="754" text-anchor="middle" font-size="8.5" fill="#FFCDD2">通过统一 notifier.py 接口向 Owner 发送异常及 book_N_quality_report.md 查阅提醒，等待人工决策</text>
+
+  <!-- Support bar -->
+  <rect x="757" y="706" width="731" height="52" rx="10" fill="#E65100" filter="url(#shadow)"/>
+  <text x="1122" y="727" text-anchor="middle" font-size="11" font-weight="bold" fill="white">📊  支撑服务 · Dashboard · Token Tracker · State Persistence</text>
+  <text x="1122" y="744" text-anchor="middle" font-size="9" fill="#FFE0B2">实时看板 (内网 + Cloudflare Tunnel 公网) · 5h 窗口 Token 追踪 (对齐自然时间节点) · ingest_state.json</text>
+  <text x="1122" y="754" text-anchor="middle" font-size="8.5" fill="#FFE0B2">Chunk-Level Checkpoint (哈希去重 · 断点续传) · Dashboard 三大板块 · 硬件 / API 资源指标</text>
+
+  <!-- ═══════════════════════════════════════════ LEGEND ═══════════════════════════════════════════ -->
+  <rect x="12" y="768" width="1476" height="80" rx="10" fill="#ECEFF1" stroke="#B0BEC5" stroke-width="1"/>
+  <text x="748" y="786" text-anchor="middle" font-size="11" font-weight="bold" fill="#37474F">图例 Legend</text>
+
+  <rect x="28" y="796" width="16" height="16" fill="#1565C0" rx="3"/>
+  <text x="50" y="809" font-size="10" fill="#37474F">外环 Outer Loop (Book Orchestrator)</text>
+
+  <rect x="250" y="796" width="16" height="16" fill="#2E7D32" rx="3"/>
+  <text x="272" y="809" font-size="10" fill="#37474F">Track A · Stage 1+2 · MiniMax-M3 LLM</text>
+
+  <rect x="510" y="796" width="16" height="16" fill="#0277BD" rx="3"/>
+  <text x="532" y="809" font-size="10" fill="#37474F">Track B · Stage 3 · 本地 bge-m3 Embedding</text>
+
+  <rect x="770" y="796" width="16" height="16" fill="#BF360C" rx="3"/>
+  <text x="792" y="809" font-size="10" fill="#37474F">Handoff Queue (asyncio · 非阻塞)</text>
+
+  <rect x="990" y="796" width="16" height="16" fill="#E65100" rx="3"/>
+  <text x="1012" y="809" font-size="10" fill="#37474F">⚡ 并行优化 (书间流水线)</text>
+
+  <rect x="1180" y="796" width="16" height="16" fill="#B71C1C" rx="3"/>
+  <text x="1202" y="809" font-size="10" fill="#37474F">自愈告警环</text>
+
+  <line x1="28" y1="832" x2="68" y2="832" stroke="#EF5350" stroke-width="2" stroke-dasharray="6,3"/>
+  <text x="78" y="836" font-size="10" fill="#37474F">外环回路</text>
+
+  <line x1="200" y1="832" x2="240" y2="832" stroke="#4FC3F7" stroke-width="2" stroke-dasharray="5,3"/>
+  <text x="250" y="836" font-size="10" fill="#37474F">完成信号反馈</text>
+
+  <line x1="390" y1="832" x2="430" y2="832" stroke="#FF8F00" stroke-width="2.5"/>
+  <text x="440" y="836" font-size="10" fill="#37474F">派发 / 数据流</text>
+
+  <line x1="580" y1="832" x2="620" y2="832" stroke="#69F0AE" stroke-width="2"/>
+  <text x="630" y="836" font-size="10" fill="#37474F">Stage 内部流转</text>
+
+  <text x="1400" y="850" text-anchor="end" font-size="8" fill="#90A4AE">Astronomy LightRAG Harness · Dual-Loop ReAct Architecture · Rev.1.0</text>
+
+</svg>

@@ -12,6 +12,8 @@ import glob
 from datetime import datetime, timedelta
 from pathlib import Path
 from flask import Flask, Response, jsonify, send_from_directory, request
+import asyncio
+import threading
 
 from dotenv import load_dotenv
 
@@ -22,6 +24,31 @@ if hasattr(sys.stderr, "reconfigure"):
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 load_dotenv(PROJECT_ROOT / ".env")
+
+src_dir = PROJECT_ROOT / "src"
+if str(src_dir) not in sys.path:
+    sys.path.insert(0, str(src_dir))
+if str(PROJECT_ROOT.parent) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT.parent))
+
+try:
+    from harness_astronomy_knowledge_lightrag.src.astronomy_lightrag.config import LIGHTRAG_WORKSPACE, DEFAULT_LLM_TIMEOUT
+    from harness_astronomy_knowledge_lightrag.src.astronomy_lightrag.llm import get_minimax_llm_func, get_minimax_embedding_func
+    from harness_astronomy_knowledge_lightrag.src.astronomy_lightrag.token_tracker import get_token_tracker
+    from harness_astronomy_knowledge_lightrag.src.astronomy_lightrag.query_preprocessor import install_exact_match_hook, preprocess_astronomy_query
+except (ImportError, ModuleNotFoundError):
+    import importlib
+    _cfg = importlib.import_module("astronomy_lightrag.config")
+    LIGHTRAG_WORKSPACE = _cfg.LIGHTRAG_WORKSPACE
+    DEFAULT_LLM_TIMEOUT = _cfg.DEFAULT_LLM_TIMEOUT
+    _llm = importlib.import_module("astronomy_lightrag.llm")
+    get_minimax_llm_func = _llm.get_minimax_llm_func
+    get_minimax_embedding_func = _llm.get_minimax_embedding_func
+    _tt = importlib.import_module("astronomy_lightrag.token_tracker")
+    get_token_tracker = _tt.get_token_tracker
+    _qp = importlib.import_module("astronomy_lightrag.query_preprocessor")
+    install_exact_match_hook = _qp.install_exact_match_hook
+    preprocess_astronomy_query = _qp.preprocess_astronomy_query
 
 # Authentication credentials
 DASHBOARD_USER = (os.getenv("DASHBOARD_USER_NAME") or os.getenv("DASHBOARD_USERNAME") or "admin").strip()
@@ -37,19 +64,13 @@ app = Flask(__name__)
 
 # Target POC books
 TARGET_BOOKS = [
-    "book_Hidden Treasures (2007)",
-    "book_Southern Gems (2013)",
-    "book_The Caldwell Objects (2003)",
-    "book_The Messier Objects (1998)",
-    "book_The Secret Deep (2011)"
+    "book_066",
+    "book_142"
 ]
 
 DOC_ID_MAP = {
-    "doc-1b0ce47e5c2117b34f98510c0f67d5d9": "book_Hidden Treasures (2007)",
-    "doc-4bb071965406fc1d0aac9dd7ceded038": "book_Southern Gems (2013)",
-    "doc-1f0352adac4c33c34e46966cb24818c1": "book_The Caldwell Objects (2003)",
-    "doc-35adadf02ced68e4c786cbafc8946882": "book_The Messier Objects (1998)",
-    "doc-c5814edfcc328d47376301fb9568bb0a": "book_The Secret Deep (2011)",
+    "book_066": "book_066",
+    "book_142": "book_142",
 }
 
 BOOK_TO_DOC_ID = {v: k for k, v in DOC_ID_MAP.items()}
@@ -63,7 +84,11 @@ def get_latest_log_path():
     """Finds the most recently modified ingestion log file."""
     if not LOGS_DIR.exists():
         return None
-    log_files = sorted(LOGS_DIR.glob("lightrag_ingest_*.log"), key=lambda f: f.stat().st_mtime, reverse=True)
+    log_files = sorted(
+        list(LOGS_DIR.glob("harness_orchestrator_*.log")) + list(LOGS_DIR.glob("lightrag_ingest_*.log")),
+        key=lambda f: f.stat().st_mtime,
+        reverse=True
+    )
     return log_files[0] if log_files else None
 
 
@@ -71,15 +96,15 @@ def parse_log_stats(log_path):
     """Parses real-time chunk progress, entity counts, speed, and status from the log."""
     stats = {
         "active_chunk": 0,
-        "total_chunks": 608,
+        "total_chunks": 0,
         "latest_ent": 0,
         "latest_rel": 0,
         "total_ent": 0,
         "total_rel": 0,
-        "avg_chunk_sec": 24.0,
+        "avg_chunk_sec": 0.0,
         "is_waiting_reset": False,
         "wait_remaining_sec": 0,
-        "active_book_name": "book_The Secret Deep (2011)",
+        "active_book_name": "",
         "last_log_line": ""
     }
     if not log_path or not log_path.exists():
@@ -308,17 +333,44 @@ def get_dashboard_state():
     poc_books = []
     active_book_found = False
 
-    for idx, book_name in enumerate(TARGET_BOOKS, 1):
-        clean_title = book_name.replace("book_", "")
-        doc_id = BOOK_TO_DOC_ID.get(book_name)
+    try:
+        from astronomy_lightrag.doc_registry import get_book_registry
+        book_reg = get_book_registry()
+    except Exception:
+        book_reg = {}
+
+    display_books = []
+    for k in completed_books.keys():
+        b_name = k.split("\\")[0].split("/")[0]
+        if b_name not in display_books:
+            display_books.append(b_name)
+    for b in TARGET_BOOKS:
+        if b not in display_books:
+            display_books.append(b)
+
+    for idx, book_name in enumerate(display_books, 1):
+        clean_title = book_reg.get(book_name, {}).get("title") or book_name.replace("book_", "")
+        doc_id = BOOK_TO_DOC_ID.get(book_name, book_name)
         doc_info = doc_status_map.get(doc_id, {})
-        is_processed = (doc_info.get("status") == "processed") or (book_name in completed_books)
+        is_processed = (doc_info.get("status") == "processed")
+        info = {}
+        for c_key, c_val in completed_books.items():
+            if book_name in c_key:
+                is_processed = True
+                info = c_val
+                break
 
         if is_processed:
-            info = completed_books.get(book_name, {})
-            c_done = info.get("chunks_count") or doc_info.get("chunks_count") or (608 if idx == 1 else 500)
-            e_count = info.get("entities_count", 5213 if idx == 1 else "-")
-            r_count = info.get("relations_count", 8723 if idx == 1 else "-")
+            est_chunks = book_reg.get(book_name, {}).get("estimated_chunks", 0)
+            if not est_chunks:
+                for v in book_reg.values():
+                    if v.get("title") == clean_title:
+                        est_chunks = v.get("estimated_chunks", 0)
+                        break
+
+            c_done = info.get("chunks_count") or doc_info.get("chunks_count") or est_chunks
+            e_count = info.get("entities_count", "已归档")
+            r_count = info.get("relations_count", "已归档")
             poc_books.append({
                 "index": idx,
                 "id": book_name,
@@ -370,21 +422,8 @@ def get_dashboard_state():
                 "avg_chunk_sec": log_stats["avg_chunk_sec"],
                 "stage_label": log_stats.get("stage_label", "")
             })
-        elif idx in [2, 3, 4]:
-            # Books 2, 3, 4: chunks were all extracted and in LLM response cache
-            poc_books.append({
-                "index": idx,
-                "id": book_name,
-                "title": clean_title,
-                "status": "cached_pending",
-                "progress_pct": 70.0,
-                "chunks_done": 634 if idx == 2 else 500,
-                "chunks_total": 634 if idx == 2 else 500,
-                "entities": "-",
-                "relations": "-",
-                "stage_label": "📦 抽取已完成(全部在缓存)，等待落盘"
-            })
         else:
+            est_chunks = book_reg.get(book_name, {}).get("estimated_chunks", 0)
             poc_books.append({
                 "index": idx,
                 "id": book_name,
@@ -392,7 +431,7 @@ def get_dashboard_state():
                 "status": "queued",
                 "progress_pct": 0.0,
                 "chunks_done": 0,
-                "chunks_total": 0,
+                "chunks_total": est_chunks,
                 "entities": 0,
                 "relations": 0
             })
@@ -421,7 +460,7 @@ def get_dashboard_state():
         "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         "token": token_state,
         "active_book": {
-            "name": log_stats["active_book_name"].replace("book_", ""),
+            "name": book_reg.get(log_stats["active_book_name"], {}).get("title") or log_stats["active_book_name"].replace("book_", ""),
             "full_id": log_stats["active_book_name"],
             "chunk_done": log_stats["active_chunk"],
             "chunk_total": log_stats["total_chunks"],
@@ -609,6 +648,90 @@ def sse_stream():
         content_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"}
     )
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Chat API for LightRAG Querying
+# ──────────────────────────────────────────────────────────────────────────────
+
+_rag_instance = None
+_rag_loop = None
+_rag_thread = None
+_rag_lock = threading.Lock()
+
+def _start_rag_loop(loop):
+    asyncio.set_event_loop(loop)
+    loop.run_forever()
+
+def get_rag():
+    global _rag_instance, _rag_loop, _rag_thread
+    with _rag_lock:
+        if _rag_instance is None:
+            from lightrag import LightRAG
+
+            install_exact_match_hook()
+
+            _rag_loop = asyncio.new_event_loop()
+            _rag_thread = threading.Thread(target=_start_rag_loop, args=(_rag_loop,), daemon=True, name="rag-loop")
+            _rag_thread.start()
+
+            tracker = get_token_tracker()
+
+            async def _init():
+                rag = LightRAG(
+                    working_dir=str(LIGHTRAG_WORKSPACE),
+                    llm_model_func=get_minimax_llm_func(tracker=tracker),
+                    embedding_func=get_minimax_embedding_func(tracker=tracker),
+                    default_llm_timeout=DEFAULT_LLM_TIMEOUT
+                )
+                await rag.initialize_storages()
+                return rag
+
+            fut = asyncio.run_coroutine_threadsafe(_init(), _rag_loop)
+            _rag_instance = fut.result()
+    return _rag_instance, _rag_loop
+
+@app.route("/api/chat", methods=["POST"])
+def api_chat():
+    data = request.json
+    question = data.get("question")
+    mode = data.get("mode", "mix")
+    if not question:
+        return jsonify({"error": "Question is required"}), 400
+    
+    try:
+        from lightrag import QueryParam
+
+        # Step 1 & 2: Query expansion & exact entity routing
+        expanded_q, detected_entities = preprocess_astronomy_query(question)
+
+        user_prompt = (
+            "注意事项：\n"
+            "1. 严格区分星表归属，严禁张冠李戴（如 Caldwell 属于科德韦尔星表，绝不能称为梅西耶编号）。\n"
+            "2. 提及页码或资料时，必须结合参考来源明确说明属于哪本书（如《The Caldwell Objects (2003)》第 62-67 页），禁止出现无所属书名的孤立页码。\n"
+            "3. 若信息源于书末索引（Index），请明确说明为该书的索引条目。"
+        )
+
+        rag, loop = get_rag()
+        param = QueryParam(
+            mode=mode,
+            enable_rerank=False,
+            user_prompt=user_prompt
+        )
+        if detected_entities:
+            param._exact_match_entities = detected_entities
+
+        coro = rag.aquery(expanded_q, param=param)
+        fut = asyncio.run_coroutine_threadsafe(coro, loop)
+        response = fut.result()
+        return jsonify({
+            "answer": response,
+            "original_query": question,
+            "expanded_query": expanded_q,
+            "detected_entities": detected_entities
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 
 def run_dashboard(host="0.0.0.0", port=7789):

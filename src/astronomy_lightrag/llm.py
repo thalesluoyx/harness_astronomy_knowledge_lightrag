@@ -9,7 +9,7 @@ from openai import APIStatusError
 from lightrag.llm.openai import openai_complete_if_cache
 from lightrag.utils import EmbeddingFunc
 
-from .config import LLM_API_KEY, LLM_BASE_URL, LLM_MODEL, EMBEDDING_MODEL, EMBEDDING_DIM
+from .config import LLM_API_KEY, LLM_BASE_URL, LLM_MODEL, EMBEDDING_MODEL, EMBEDDING_DIM, EMBEDDING_ENGINE
 from .token_tracker import get_token_tracker, TokenTracker
 
 logger = logging.getLogger("astronomy_lightrag.llm")
@@ -71,6 +71,8 @@ def get_minimax_llm_func(
 
             except APIStatusError as err:
                 is_402 = err.status_code == 402 or "insufficient_balance" in str(err)
+                is_422 = err.status_code == 422 or "sensitive" in str(err).lower() or "unprocessable_entity" in str(err).lower()
+
                 if is_402:
                     logger.warning(
                         f"⚠️ [TokenTracker] API returned 402 Insufficient Balance on attempt {attempt+1}! "
@@ -79,6 +81,16 @@ def get_minimax_llm_func(
                     tracker.mark_limit_reached()
                     await tracker.wait_if_limit_reached()
                     continue
+                elif is_422:
+                    logger.warning(
+                        f"⚠️ [LLM] Content filter / 422 Unprocessable Entity triggered: {err}. "
+                        f"Returning safe fallback output to prevent pipeline failure."
+                    )
+                    if kwargs.get("response_format") == {"type": "json_object"}:
+                        return "{}"
+                    if "<|COMPLETE|>" in (system_prompt or "") or "<|#|>" in prompt or "<|COMPLETE|>" in prompt or "Entity Types" in prompt:
+                        return "<|COMPLETE|>"
+                    return "Astronomical object or concept described in catalog records."
                 else:
                     logger.error(f"❌ [LLM] APIStatusError {err.status_code}: {err}", exc_info=True)
                     raise
@@ -95,12 +107,17 @@ def get_minimax_embedding_func(
     model: str = EMBEDDING_MODEL,
     api_key: str = LLM_API_KEY,
     base_url: str = LLM_BASE_URL,
-    dim: int = EMBEDDING_DIM
+    dim: int = EMBEDDING_DIM,
+    tracker: Optional[TokenTracker] = None
 ) -> EmbeddingFunc:
     """
     Creates an EmbeddingFunc compatible with LightRAG that calls MiniMax's
     native embedding endpoint (embo-01).
+    Includes TokenTracker rate/quota limit handling and automatic 1008 recovery.
     """
+    if tracker is None:
+        tracker = get_token_tracker()
+
     headers = {
         "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json"
@@ -109,6 +126,9 @@ def get_minimax_embedding_func(
     embedding_lock = asyncio.Lock()
 
     async def embedding_call(texts: List[str], **kwargs) -> np.ndarray:
+        if tracker:
+            await tracker.wait_if_limit_reached()
+
         all_vectors = []
         batch_size = 8
         logger.info(f"🚀 [Embedding] Vectorizing {len(texts)} chunks via {model}...")
@@ -124,18 +144,40 @@ def get_minimax_embedding_func(
                 success = False
                 for attempt in range(max_retries):
                     try:
+                        if tracker:
+                            await tracker.wait_if_limit_reached()
+
                         async with embedding_lock:
                             r = await client.post(f"{base_url}/embeddings", headers=headers, json=payload)
                         r.raise_for_status()
                         data = r.json()
                         base_resp = data.get("base_resp", {})
-                        if base_resp.get("status_code") == 1002:  # RPM rate limit exceeded
+
+                        # 1002: RPM rate limit exceeded
+                        if base_resp.get("status_code") == 1002:
                             wait_sec = min(30.0, 3.0 * (attempt + 1))
                             logger.warning(
                                 f"⚠️ [Embedding] MiniMax RPM rate limit reached (1002). "
                                 f"Backing off for {wait_sec:.1f}s (attempt {attempt+1}/{max_retries})..."
                             )
                             await asyncio.sleep(wait_sec)
+                            continue
+
+                        # 1008 / 402: Insufficient balance
+                        is_balance_err = (
+                            base_resp.get("status_code") == 1008
+                            or "insufficient balance" in str(base_resp).lower()
+                        )
+                        if is_balance_err:
+                            logger.warning(
+                                f"⚠️ [Embedding] MiniMax returned 1008 Insufficient Balance on attempt {attempt+1}! "
+                                f"Marking 5h window full and pausing until next clock reset..."
+                            )
+                            if tracker:
+                                tracker.mark_limit_reached()
+                                await tracker.wait_if_limit_reached()
+                            else:
+                                await asyncio.sleep(300)
                             continue
 
                         vectors = data.get("vectors", [])
@@ -146,6 +188,15 @@ def get_minimax_embedding_func(
                         await asyncio.sleep(0.25)  # Throttle to prevent bursting RPM
                         break
                     except (httpx.RequestError, httpx.HTTPStatusError) as net_err:
+                        if isinstance(net_err, httpx.HTTPStatusError) and net_err.response.status_code == 402:
+                            logger.warning(
+                                f"⚠️ [Embedding] HTTP 402 Insufficient Balance! Pausing for window reset..."
+                            )
+                            if tracker:
+                                tracker.mark_limit_reached()
+                                await tracker.wait_if_limit_reached()
+                            continue
+
                         if attempt == max_retries - 1:
                             raise
                         wait_sec = min(30.0, 3.0 * (attempt + 1))
@@ -162,3 +213,34 @@ def get_minimax_embedding_func(
         max_token_size=2048,
         func=embedding_call
     )
+
+
+def get_astronomy_embedding_func(
+    engine_type: Optional[str] = None,
+    tracker: Optional[TokenTracker] = None
+) -> EmbeddingFunc:
+    """
+    Returns the appropriate LightRAG EmbeddingFunc based on EMBEDDING_ENGINE ('local' vs 'online').
+    When 'local', runs high-throughput in-memory CPU ONNX embedding (0 cost, 0 rate limit).
+    """
+    target_engine = (engine_type or EMBEDDING_ENGINE).lower()
+    if target_engine == "local":
+        try:
+            from .local_embedding import get_local_embedding_engine
+        except ImportError:
+            from astronomy_lightrag.local_embedding import get_local_embedding_engine
+
+        engine = get_local_embedding_engine()
+        logger.info(
+            f"⚡ [Embedding] Using local offline embedding engine: "
+            f"model={engine.model_name}, dim={engine.embedding_dim}"
+        )
+        return EmbeddingFunc(
+            embedding_dim=engine.embedding_dim,
+            max_token_size=8192,
+            func=engine.embed_async
+        )
+    else:
+        logger.info("🌐 [Embedding] Using online MiniMax embo-01 embedding engine.")
+        return get_minimax_embedding_func(tracker=tracker)
+

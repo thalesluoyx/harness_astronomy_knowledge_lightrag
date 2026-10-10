@@ -603,6 +603,395 @@
     .log-line .tag-err  { color: #f87171; font-weight: 600; }
     .log-line .tag-chunk { color: #34d399; font-weight: 600; }
 
+    /* ── Tabs & Chat UI ─────────────────────────────────────── */
+    .tabs-container {
+      display: flex;
+      gap: 12px;
+      margin-bottom: 20px;
+    }
+    .tab-btn {
+      background: var(--surface-card);
+      border: 1px solid var(--border);
+      color: var(--text-muted);
+      padding: 10px 20px;
+      border-radius: var(--radius);
+      cursor: pointer;
+      font-weight: 600;
+      font-size: 0.9rem;
+      transition: all 0.2s;
+    }
+    .tab-btn:hover {
+      border-color: var(--cyan);
+      color: #fff;
+    }
+    .tab-btn.active {
+      background: rgba(56, 189, 248, 0.15);
+      border-color: var(--cyan);
+      color: var(--cyan);
+    }
+    .tab-content {
+      display: none;
+      flex-direction: column;
+      gap: 22px;
+    }
+    .tab-content.active {
+      display: flex;
+    }
+
+    .chat-container {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      height: calc(100vh - 165px);
+      min-height: 680px;
+    }
+    .chat-history {
+      flex: 1;
+      background: var(--surface-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 16px;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .chat-msg {
+      padding: 10px 14px;
+      border-radius: var(--radius-sm);
+      max-width: 85%;
+      line-height: 1.5;
+      font-size: 0.88rem;
+      white-space: pre-wrap;
+    }
+    .chat-msg.welcome {
+      max-width: 100%;
+      background: rgba(14, 20, 36, 0.6);
+      border: 1px solid var(--border);
+      padding: 12px 14px;
+    }
+    .mode-guide-rows {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      margin-top: 8px;
+    }
+    .mode-guide-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      background: rgba(15, 23, 42, 0.7);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      padding: 6px 12px;
+      transition: all .15s ease;
+    }
+    .mode-guide-row:hover {
+      border-color: rgba(56, 189, 248, 0.35);
+      background: rgba(15, 23, 42, 0.9);
+    }
+    .mode-row-tag {
+      font-weight: 600;
+      font-size: 0.8rem;
+      white-space: nowrap;
+      min-width: 175px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .mode-row-desc {
+      color: var(--text-muted);
+      font-size: 0.77rem;
+      flex: 1;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .mode-row-pill {
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 4px;
+      padding: 4px 10px;
+      font-size: 0.76rem;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: all .15s ease;
+      color: var(--text);
+      text-decoration: none;
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      flex-shrink: 0;
+    }
+    .mode-row-pill:hover {
+      background: rgba(56, 189, 248, 0.15);
+      border-color: var(--cyan);
+      color: var(--cyan);
+    }
+    @media (max-width: 1000px) {
+      .mode-guide-row {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 4px;
+        padding: 8px 10px;
+      }
+      .mode-row-desc {
+        white-space: normal;
+      }
+    }
+    .chat-msg.user {
+      align-self: flex-end;
+      background: rgba(56, 189, 248, 0.15);
+      border: 1px solid var(--cyan);
+      color: #fff;
+    }
+    .chat-msg.bot {
+      align-self: flex-start;
+      background: rgba(15, 23, 42, 0.85);
+      border: 1px solid var(--border);
+      color: #cbd5e1;
+    }
+    .chat-msg.bot.compare-card {
+      white-space: normal; /* Override .chat-msg white-space: pre-wrap to prevent blank space */
+      max-width: 100%;
+      width: 100%;
+      padding: 10px 14px;
+      border-radius: var(--radius);
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.35);
+    }
+    .compare-tabs-bar {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 8px;
+      margin-bottom: 8px;
+      flex-wrap: wrap;
+    }
+    .compare-tab-btn {
+      background: rgba(15, 23, 42, 0.6);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      padding: 5px 11px;
+      color: var(--text-muted);
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      font-size: 0.82rem;
+      font-weight: 500;
+      transition: all .15s ease;
+      user-select: none;
+    }
+    .compare-tab-btn:hover {
+      border-color: rgba(255, 255, 255, 0.25);
+      color: #fff;
+    }
+    .compare-tab-btn.active[data-mode="mix"] {
+      border-color: var(--cyan);
+      background: rgba(56, 189, 248, 0.12);
+      color: var(--cyan);
+      font-weight: 600;
+    }
+    .compare-tab-btn.active[data-mode="local"] {
+      border-color: var(--purple);
+      background: rgba(168, 85, 247, 0.12);
+      color: var(--purple);
+      font-weight: 600;
+    }
+    .compare-tab-btn.active[data-mode="global"] {
+      border-color: var(--green);
+      background: rgba(16, 185, 129, 0.12);
+      color: var(--green);
+      font-weight: 600;
+    }
+    .compare-tab-btn.active[data-mode="naive"] {
+      border-color: var(--blue);
+      background: rgba(59, 130, 246, 0.12);
+      color: var(--blue);
+      font-weight: 600;
+    }
+    .tab-badge {
+      font-size: 0.7rem;
+      padding: 2px 7px;
+      border-radius: 10px;
+      background: rgba(255, 255, 255, 0.05);
+      font-family: var(--mono);
+      font-weight: normal;
+      color: var(--text-dim);
+    }
+    .tab-badge.loading {
+      color: var(--amber);
+      background: rgba(245, 158, 11, 0.15);
+      animation: pulse-badge 1.5s infinite;
+    }
+    .tab-badge.done {
+      color: var(--green);
+      background: rgba(16, 185, 129, 0.15);
+    }
+    .tab-badge.error {
+      color: var(--red);
+      background: rgba(239, 68, 68, 0.15);
+    }
+    @keyframes pulse-badge {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.5; }
+    }
+    .compare-panels-body {
+      position: relative;
+      margin: 0;
+      padding: 0;
+    }
+    .compare-panel {
+      display: none;
+      white-space: normal;
+    }
+    .compare-panel.active {
+      display: block;
+      animation: fadeIn .2s ease;
+    }
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(2px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    .panel-meta {
+      font-size: 0.74rem;
+      color: var(--text-dim);
+      margin-bottom: 8px;
+      padding: 4px 8px;
+      background: rgba(0, 0, 0, 0.25);
+      border-radius: 4px;
+      border-left: 3px solid var(--border);
+      font-family: var(--mono);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+    .panel-content {
+      font-size: 0.88rem;
+      line-height: 1.65;
+      color: #e2e8f0;
+      max-height: 760px;
+      overflow-y: auto;
+      padding-right: 6px;
+    }
+    .panel-content .md-h2 {
+      font-size: 1.15rem;
+      font-weight: 700;
+      color: #fff;
+      margin: 14px 0 8px 0;
+      padding-bottom: 4px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    }
+    .panel-content .md-h3 {
+      font-size: 1.02rem;
+      font-weight: 600;
+      color: #38bdf8;
+      margin: 12px 0 6px 0;
+    }
+    .panel-content .md-h4 {
+      font-size: 0.92rem;
+      font-weight: 600;
+      color: #a855f7;
+      margin: 10px 0 4px 0;
+    }
+    .panel-content .md-bold {
+      color: #fff;
+      font-weight: 600;
+    }
+    .panel-content .md-quote {
+      border-left: 3px solid var(--cyan);
+      padding: 6px 12px;
+      background: rgba(56, 189, 248, 0.06);
+      margin: 8px 0;
+      border-radius: 0 4px 4px 0;
+      color: #cbd5e1;
+      font-style: italic;
+    }
+    .panel-content .md-ul {
+      margin: 6px 0 10px 20px;
+      padding: 0;
+    }
+    .panel-content .md-li {
+      margin-bottom: 4px;
+    }
+    .panel-content .md-p {
+      margin-bottom: 8px;
+    }
+    .panel-content .md-inline-code {
+      background: rgba(255, 255, 255, 0.08);
+      color: #38bdf8;
+      padding: 1px 5px;
+      border-radius: 3px;
+      font-family: var(--mono);
+      font-size: 0.82rem;
+    }
+    .panel-content .md-code-block {
+      background: #090d16;
+      border: 1px solid var(--border);
+      padding: 10px 12px;
+      border-radius: var(--radius-sm);
+      overflow-x: auto;
+      margin: 10px 0;
+      font-family: var(--mono);
+      font-size: 0.8rem;
+    }
+    .panel-content .md-hr {
+      border: none;
+      border-top: 1px solid var(--border);
+      margin: 14px 0;
+    }
+    .chat-input-area {
+      display: flex;
+      gap: 12px;
+      background: var(--surface-card);
+      padding: 12px 14px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+    }
+    .chat-mode-select {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      color: #fff;
+      padding: 0 12px;
+      border-radius: var(--radius-sm);
+      outline: none;
+      font-family: var(--font);
+    }
+    .chat-input {
+      flex: 1;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      color: #fff;
+      padding: 12px 16px;
+      border-radius: var(--radius-sm);
+      font-size: 0.95rem;
+      font-family: var(--font);
+      outline: none;
+    }
+    .chat-input:focus {
+      border-color: var(--cyan);
+    }
+    .chat-send-btn {
+      background: var(--cyan);
+      color: #000;
+      border: none;
+      padding: 0 24px;
+      border-radius: var(--radius-sm);
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+    .chat-send-btn:hover {
+      background: #0ea5e9;
+    }
+    .chat-send-btn:disabled {
+      background: var(--text-dim);
+      cursor: not-allowed;
+    }
+
     /* ── Scrollbar ──────────────────────────────────────────── */
     ::-webkit-scrollbar { width: 6px; height: 6px; }
     ::-webkit-scrollbar-track { background: transparent; }
@@ -631,7 +1020,14 @@
   </header>
 
   <main>
-    <!-- Section 1: System Macro Metrics (3 Cards) -->
+    <div class="tabs-container">
+      <button id="btn-tab-dashboard" class="tab-btn active" onclick="switchTab('dashboard')">📊 监控看板</button>
+      <button id="btn-tab-chat" class="tab-btn" onclick="switchTab('chat')">💬 知识检索 (Chat)</button>
+    </div>
+
+    <!-- TAB: Dashboard -->
+    <div id="tab-dashboard" class="tab-content active">
+      <!-- Section 1: System Macro Metrics (3 Cards) -->
     <div class="metrics-grid">
       <!-- Card 1: Daily Token Quota Window -->
       <div class="metric-card">
@@ -880,6 +1276,86 @@
             <button class="btn-tool" onclick="clearTerminal()">🧹 清屏</button>
           </div>
           <div id="terminal-body" class="terminal-body"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+    <!-- TAB: Chat -->
+    <div id="tab-chat" class="tab-content">
+      <div class="chat-container">
+        <div class="chat-history" id="chat-history">
+          <div class="chat-msg welcome">
+            <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:6px">
+              <span style="font-weight:700;font-size:0.88rem;color:#fff">🔭 检索模式使用指引</span>
+              <span style="color:var(--text-dim);font-size:0.75rem">💡 点击右侧例句直接填充提问并切换对应模式</span>
+            </div>
+
+            <div class="mode-guide-rows">
+              <!-- Row 1: Mix -->
+              <div class="mode-guide-row" style="border-left:3px solid var(--cyan)">
+                <div class="mode-row-tag" style="color:var(--cyan)">
+                  <span>🔀 综合融合模式 (mix · 默认)</span>
+                </div>
+                <div class="mode-row-desc">
+                  图谱拓扑 + 原始文本切块联合检索，兼顾全局关系与原著切块，既防遗漏又具备高阶推理
+                </div>
+                <a href="javascript:void(0)" class="mode-row-pill" onclick="fillChatPrompt('M42 猎户座大星云在不同望远镜口径下的核心观测细节与伴生恒星特征是什么？', 'mix')">
+                  <span style="color:var(--cyan);font-weight:600">例句:</span> M42 猎户座大星云不同口径观测细节与伴生恒星特征？
+                </a>
+              </div>
+
+              <!-- Row 2: Local -->
+              <div class="mode-guide-row" style="border-left:3px solid var(--purple)">
+                <div class="mode-row-tag" style="color:var(--purple)">
+                  <span>🔍 局部细节 (local)</span>
+                </div>
+                <div class="mode-row-desc">
+                  聚焦实体与邻接节点，适合特定天体、星表编号、视星等、坐标与器材参数的精准查阅
+                </div>
+                <a href="javascript:void(0)" class="mode-row-pill" onclick="fillChatPrompt('Caldwell 14 (NGC 869/884 双星团) 的视星等、天区坐标及最佳观测放大倍率是多少？', 'local')">
+                  <span style="color:var(--purple);font-weight:600">例句:</span> Caldwell 14 (双星团) 视星等与最佳放大倍率？
+                </a>
+              </div>
+
+              <!-- Row 3: Global -->
+              <div class="mode-guide-row" style="border-left:3px solid var(--green)">
+                <div class="mode-row-tag" style="color:var(--green)">
+                  <span>🌐 宏观全局 (global)</span>
+                </div>
+                <div class="mode-row-desc">
+                  全图谱宏观聚类总结，适合宽泛跨章节的宏观主题与巡天观测历史发展脉络梳理
+                </div>
+                <a href="javascript:void(0)" class="mode-row-pill" onclick="fillChatPrompt('梅西耶星表 (Messier) 与科德韦尔星表 (Caldwell) 在天区分布与目标类型上有何核心区别？', 'global')">
+                  <span style="color:var(--green);font-weight:600">例句:</span> 梅西耶与科德韦尔星表的核心区别与天区分布？
+                </a>
+              </div>
+
+              <!-- Row 4: Naive -->
+              <div class="mode-guide-row" style="border-left:3px solid var(--blue)">
+                <div class="mode-row-tag" style="color:var(--blue)">
+                  <span>📄 经典向量 (naive)</span>
+                </div>
+                <div class="mode-row-desc">
+                  纯文本 Embedding 语义相似度匹配（传统 RAG），适合简单关键词查找或定位原著描述片段
+                </div>
+                <a href="javascript:void(0)" class="mode-row-pill" onclick="fillChatPrompt('OIII 滤镜在观测面纱星云 (Veil Nebula) 时的对比度提升描述', 'naive')">
+                  <span style="color:var(--blue);font-weight:600">例句:</span> OIII 滤镜在观测面纱星云时的对比度提升描述？
+                </a>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="chat-input-area">
+          <select id="chat-mode" class="chat-mode-select">
+            <option value="all" selected>⚡ 4 模式并行对比 (Tab 切换 · 默认)</option>
+            <option value="mix">🔀 仅综合融合模式 (mix)</option>
+            <option value="local">🔍 仅局部细节模式 (local)</option>
+            <option value="global">🌐 仅宏观全局模式 (global)</option>
+            <option value="naive">📄 仅经典向量模式 (naive)</option>
+          </select>
+          <input type="text" id="chat-input" class="chat-input" placeholder="输入您关于天文学的问题，按 Enter 发送..." onkeypress="handleChatKey(event)" />
+          <button id="chat-send" class="chat-send-btn" onclick="sendChatMessage()">发 送</button>
         </div>
       </div>
     </div>
@@ -1264,6 +1740,264 @@
         document.getElementById('countdown').textContent = '00:00:00';
       }
     }, 1000);
+
+    // ── Tabs & Chat Logic ─────────────────────────────────────
+    function switchTab(tab) {
+      document.getElementById('tab-dashboard').classList.remove('active');
+      document.getElementById('tab-chat').classList.remove('active');
+      document.getElementById('btn-tab-dashboard').classList.remove('active');
+      document.getElementById('btn-tab-chat').classList.remove('active');
+
+      document.getElementById('tab-' + tab).classList.add('active');
+      document.getElementById('btn-tab-' + tab).classList.add('active');
+    }
+
+    function switchCompareTab(cardId, mode) {
+      const card = document.getElementById(cardId);
+      if (!card) return;
+      card.querySelectorAll('.compare-tab-btn').forEach(btn => {
+        btn.classList.toggle('active', btn.getAttribute('data-mode') === mode);
+      });
+      card.querySelectorAll('.compare-panel').forEach(panel => {
+        panel.classList.toggle('active', panel.getAttribute('data-panel') === mode);
+      });
+    }
+
+    function renderMarkdown(md) {
+      if (!md) return '<span style="color:var(--text-dim)">（无返回内容）</span>';
+      
+      // 1. Escape HTML
+      let html = md
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
+
+      // 2. Code blocks
+      html = html.replace(/```([\s\S]*?)```/g, (match, code) => {
+        return '<pre class="md-code-block"><code>' + code.trim() + '</code></pre>';
+      });
+
+      // 3. Inline code
+      html = html.replace(/`([^`]+)`/g, '<code class="md-inline-code">$1</code>');
+
+      // 4. Blockquotes
+      html = html.replace(/^&gt;\s*(.+)$/gm, '<blockquote class="md-quote">$1</blockquote>');
+
+      // 5. Headers
+      html = html.replace(/^### (.*$)/gim, '<h4 class="md-h4">$1</h4>');
+      html = html.replace(/^## (.*$)/gim, '<h3 class="md-h3">$1</h3>');
+      html = html.replace(/^# (.*$)/gim, '<h2 class="md-h2">$1</h2>');
+
+      // 6. Bold & Italic
+      html = html.replace(/\*\*([^*]+)\*\*/g, '<strong class="md-bold">$1</strong>');
+      html = html.replace(/\*([^*]+)\*/g, '<em>$1</em>');
+
+      // 7. Lists
+      html = html.replace(/^\s*[-*]\s+(.+)$/gm, '<li class="md-li">$1</li>');
+      html = html.replace(/((?:<li class="md-li">.*?<\/li>\s*)+)/gs, '<ul class="md-ul">$1</ul>');
+
+      // 8. Horizontal rules
+      html = html.replace(/^---$/gm, '<hr class="md-hr"/>');
+
+      // 9. Clean paragraph formatting without empty blocks
+      html = html.trim().split(/\n\n+/).map(block => {
+        block = block.trim();
+        if (!block) return '';
+        if (/^<(h[1-4]|ul|ol|pre|blockquote|hr)/i.test(block)) {
+          return block.replace(/\n/g, '<br/>');
+        }
+        return '<p class="md-p">' + block.replace(/\n/g, '<br/>') + '</p>';
+      }).join('');
+
+      return html;
+    }
+
+    function fillChatPrompt(promptText, mode) {
+      const input = document.getElementById('chat-input');
+      if (input) {
+        input.value = promptText;
+        input.focus();
+      }
+    }
+
+    function handleChatKey(e) {
+      if (e.key === 'Enter') {
+        sendChatMessage();
+      }
+    }
+
+    const MODES_CONFIG = [
+      { mode: 'mix', name: '综合融合 (mix)', color: 'cyan', icon: '🔀', desc: '图谱拓扑 + 原始文本切块联合检索（兼具图谱推理与原著细部）' },
+      { mode: 'local', name: '局部细节 (local)', color: 'purple', icon: '🔍', desc: '实体与关联拓扑精细遍历（适合查特定天体参数、星表编号、坐标）' },
+      { mode: 'global', name: '宏观全局 (global)', color: 'green', icon: '🌐', desc: '全图谱自顶向下社区报告（适合宏观脉络总结与跨星表对比）' },
+      { mode: 'naive', name: '经典向量 (naive)', color: 'blue', icon: '📄', desc: '纯文本 Embedding 密集余弦相似度匹配（适合器材术语、独家技法描述）' }
+    ];
+
+    async function sendChatMessage() {
+      const input = document.getElementById('chat-input');
+      const mode = document.getElementById('chat-mode').value;
+      const sendBtn = document.getElementById('chat-send');
+      const history = document.getElementById('chat-history');
+      
+      const text = input.value.trim();
+      if (!text) return;
+
+      // Add user message bubble
+      const userMsg = document.createElement('div');
+      userMsg.className = 'chat-msg user';
+      userMsg.textContent = text + (mode === 'all' ? ' ⚡ [4 模式并行对比]' : ` [模式: ${mode}]`);
+      history.appendChild(userMsg);
+
+      input.value = '';
+      sendBtn.disabled = true;
+      input.disabled = true;
+
+      if (mode === 'all') {
+        // ── 4 Modes Compare Card ──
+        const cardId = 'cmp_' + Date.now();
+        const compareCard = document.createElement('div');
+        compareCard.className = 'chat-msg bot compare-card';
+        compareCard.id = cardId;
+
+        // Build Tabs Bar (concatenated without loose whitespace text nodes)
+        const tabsHtml = '<div class="compare-tabs-bar">' + MODES_CONFIG.map((cfg, idx) => `
+          <button class="compare-tab-btn ${idx === 0 ? 'active' : ''}" data-mode="${cfg.mode}" id="${cardId}-tab-${cfg.mode}" onclick="switchCompareTab('${cardId}', '${cfg.mode}')">
+            <span>${cfg.icon}</span>
+            <span>${cfg.name}</span>
+            <span class="tab-badge loading" id="${cardId}-badge-${cfg.mode}">⏳ 检索中...</span>
+          </button>
+        `.trim()).join('') + '</div>';
+
+        // Build Panels Body (concatenated without loose whitespace text nodes)
+        const panelsHtml = '<div class="compare-panels-body">' + MODES_CONFIG.map((cfg, idx) => `
+          <div class="compare-panel ${idx === 0 ? 'active' : ''}" data-panel="${cfg.mode}" id="${cardId}-panel-${cfg.mode}">
+            <div class="panel-meta" id="${cardId}-meta-${cfg.mode}">
+              <span>模式: <strong>${cfg.name}</strong> · ${cfg.desc}</span>
+              <span id="${cardId}-status-${cfg.mode}" style="color:var(--amber)">⏳ 并行检索中...</span>
+            </div>
+            <div class="panel-content" id="${cardId}-content-${cfg.mode}">
+              <div style="padding:8px 0;color:var(--text-muted);display:flex;align-items:center;gap:8px;">
+                <span>⏳</span>
+                <span>正在向 LightRAG 发起 <strong>${cfg.name}</strong> 检索请求，请稍候...</span>
+              </div>
+            </div>
+          </div>
+        `.trim()).join('') + '</div>';
+
+        compareCard.innerHTML = tabsHtml + panelsHtml;
+        history.appendChild(compareCard);
+        history.scrollTop = history.scrollHeight;
+
+        // Launch 4 concurrent requests
+        const promises = MODES_CONFIG.map(cfg => {
+          const t0 = performance.now();
+          return fetch('/api/chat', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ question: text, mode: cfg.mode })
+          })
+          .then(res => res.json())
+          .then(data => {
+            const elapsed = ((performance.now() - t0) / 1000).toFixed(2);
+            const badge = document.getElementById(`${cardId}-badge-${cfg.mode}`);
+            const status = document.getElementById(`${cardId}-status-${cfg.mode}`);
+            const content = document.getElementById(`${cardId}-content-${cfg.mode}`);
+
+            if (data.error) {
+              if (badge) {
+                badge.className = 'tab-badge error';
+                badge.textContent = `❌ 出错`;
+              }
+              if (status) {
+                status.style.color = 'var(--red)';
+                status.textContent = `❌ 检索失败 (${elapsed}s)`;
+              }
+              if (content) {
+                content.innerHTML = `<div style="color:var(--red);padding:10px;background:rgba(239,68,68,0.1);border-radius:4px">❌ 错误详情: ${data.error}</div>`;
+              }
+            } else {
+              const ans = data.answer || '无结果';
+              if (badge) {
+                badge.className = 'tab-badge done';
+                badge.textContent = `✓ ${elapsed}s · ${ans.length}字`;
+              }
+              if (status) {
+                status.style.color = 'var(--green)';
+                status.textContent = `✓ 完成 (耗时: ${elapsed}s · 字数: ${ans.length}字)`;
+              }
+              if (content) {
+                content.innerHTML = renderMarkdown(ans);
+              }
+            }
+          })
+          .catch(err => {
+            const elapsed = ((performance.now() - t0) / 1000).toFixed(2);
+            const badge = document.getElementById(`${cardId}-badge-${cfg.mode}`);
+            const status = document.getElementById(`${cardId}-status-${cfg.mode}`);
+            const content = document.getElementById(`${cardId}-content-${cfg.mode}`);
+            if (badge) {
+              badge.className = 'tab-badge error';
+              badge.textContent = `❌ 失败`;
+            }
+            if (status) {
+              status.style.color = 'var(--red)';
+              status.textContent = `❌ 网络异常 (${elapsed}s)`;
+            }
+            if (content) {
+              content.innerHTML = `<div style="color:var(--red)">❌ 请求失败: ${err.message}</div>`;
+            }
+          });
+        });
+
+        try {
+          await Promise.allSettled(promises);
+        } finally {
+          sendBtn.disabled = false;
+          input.disabled = false;
+          input.focus();
+          history.scrollTop = history.scrollHeight;
+        }
+
+      } else {
+        // Single mode fallback
+        const botMsg = document.createElement('div');
+        botMsg.className = 'chat-msg bot';
+        botMsg.innerHTML = `⏳ 正在通过 [${mode}] 模式检索知识库...`;
+        history.appendChild(botMsg);
+        history.scrollTop = history.scrollHeight;
+
+        try {
+          const t0 = performance.now();
+          const res = await fetch('/api/chat', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ question: text, mode: mode })
+          });
+          const data = await res.json();
+          const elapsed = ((performance.now() - t0) / 1000).toFixed(2);
+          
+          if (data.error) {
+            botMsg.innerHTML = `❌ 错误: ${data.error}`;
+          } else {
+            const ans = data.answer || "无结果";
+            botMsg.innerHTML = `
+              <div class="panel-meta">
+                <span>模式: <strong>${mode}</strong></span>
+                <span style="color:var(--green)">✓ 耗时: ${elapsed}s · ${ans.length}字</span>
+              </div>
+              <div class="panel-content">${renderMarkdown(ans)}</div>
+            `;
+          }
+        } catch (err) {
+          botMsg.innerHTML = `❌ 请求失败: ${err.message}`;
+        } finally {
+          sendBtn.disabled = false;
+          input.disabled = false;
+          input.focus();
+          history.scrollTop = history.scrollHeight;
+        }
+      }
+    }
 
     // Initial load
     refreshState();

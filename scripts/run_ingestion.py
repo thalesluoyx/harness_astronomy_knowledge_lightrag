@@ -112,7 +112,7 @@ async def async_main():
 
     logger.info("Initializing MiniMax LLM and Embedding functions with TokenTracker...")
     llm_func = get_minimax_llm_func(tracker=tracker)
-    embedding_func = get_minimax_embedding_func()
+    embedding_func = get_minimax_embedding_func(tracker=tracker)
 
     os.environ["LLM_TIMEOUT"] = str(DEFAULT_LLM_TIMEOUT)
     logger.info(f"Instantiating LightRAG (default_llm_timeout={DEFAULT_LLM_TIMEOUT}s)...")
