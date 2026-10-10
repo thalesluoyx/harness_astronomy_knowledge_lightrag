@@ -2,8 +2,9 @@
 
 ## Session Metadata
 - Created: 2026-10-10 21:40:00
-- Project: C:\Work\openclaw_projects\bilingual_project
-- Branch: main (local workspace)
+- Project: C:\Work\openclaw_projects\bilingual_project\harness_astronomy_knowledge_lightrag
+- Branch: main
+- Git Commit: ba35ffd (https://github.com/thalesluoyx/harness_astronomy_knowledge_lightrag.git)
 - Session duration: ~3.5 hours
 
 ## Handoff Chain
