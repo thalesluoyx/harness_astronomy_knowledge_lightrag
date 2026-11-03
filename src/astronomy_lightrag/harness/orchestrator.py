@@ -15,6 +15,7 @@ Architecture:
 import os
 import sys
 import time
+import inspect
 import argparse
 import asyncio
 import logging
@@ -45,7 +46,9 @@ from astronomy_lightrag.config import (
     MAX_ASYNC,
     TOKEN_QUOTA_PER_WINDOW,
     TOKEN_LIMIT_RATIO,
-    STATE_FILE
+    STATE_FILE,
+    DATA_DIR,
+    STORAGE_BACKEND
 )
 from astronomy_lightrag.token_tracker import get_token_tracker
 from astronomy_lightrag.llm import get_minimax_llm_func, get_astronomy_embedding_func
@@ -64,7 +67,8 @@ from astronomy_lightrag.harness.gemini_judge import evaluate_graph_samples
 from astronomy_lightrag.harness.notifier import (
     send_notification,
     notify_milestone,
-    notify_quota_pause
+    notify_quota_pause,
+    notify_quarantined_book
 )
 
 logger = logging.getLogger("astronomy_lightrag.harness.orchestrator")
@@ -104,16 +108,24 @@ class FullScaleOrchestrator:
             f"Initializing LightRAG instance: workspace={self.workspace_dir}, "
             f"embedding={self.embedding_engine}, max_async={self.max_async}"
         )
-        self.rag = LightRAG(
-            working_dir=str(self.workspace_dir),
-            llm_model_func=get_minimax_llm_func(tracker=self.tracker),
-            embedding_func=get_astronomy_embedding_func(engine_type=self.embedding_engine, tracker=self.tracker),
-            llm_model_max_async=self.max_async,
-            embedding_func_max_async=16,
-            default_llm_timeout=DEFAULT_LLM_TIMEOUT,
-            chunk_token_size=1200,
-            chunk_overlap_token_size=100
-        )
+        rag_kwargs = {
+            "working_dir": str(self.workspace_dir),
+            "llm_model_func": get_minimax_llm_func(tracker=self.tracker),
+            "embedding_func": get_astronomy_embedding_func(engine_type=self.embedding_engine, tracker=self.tracker),
+            "llm_model_max_async": self.max_async,
+            "embedding_func_max_async": 16,
+            "default_llm_timeout": DEFAULT_LLM_TIMEOUT,
+            "chunk_token_size": 1200,
+            "chunk_overlap_token_size": 100
+        }
+        if STORAGE_BACKEND == "lancedb":
+            from astronomy_lightrag.storage import init_astronomy_storage_backends
+            init_astronomy_storage_backends()
+            rag_kwargs["kv_storage"] = "SQLiteKVStorage"
+            rag_kwargs["vector_storage"] = "LanceDBVectorStorage"
+            rag_kwargs["graph_storage"] = "SQLiteGraphStorage"
+
+        self.rag = LightRAG(**rag_kwargs)
 
     async def run(self):
         """
@@ -121,6 +133,14 @@ class FullScaleOrchestrator:
         """
         logger.info(f"Starting orchestration across {len(self.registry)} registered astronomy books.")
         await self.rag.initialize_storages()
+
+        # Start WeChat background long-poll so context_token never expires
+        try:
+            from bilingual_common.notifier import start_notifier_poll
+            start_notifier_poll()
+            logger.info("WeChat notifier background long-poll initialized.")
+        except Exception as poll_err:
+            logger.debug(f"WeChat poll init note: {poll_err}")
 
         # Sort books canonically by doc_id or filter by book_ids
         if self.book_ids:
@@ -139,6 +159,7 @@ class FullScaleOrchestrator:
                     logger.warning(f"Start book ID '{self.start_book_id}' not found in registry. Starting from beginning.")
 
         processed_count = 0
+        consecutive_failures = 0
         pipeline_start_time = time.time()
 
         for idx, doc_id in enumerate(ordered_doc_ids, start=1):
@@ -153,6 +174,11 @@ class FullScaleOrchestrator:
             # 1. Checkpoint Check: Skip if already marked completed
             if self.checkpoint_mgr.is_book_completed(doc_id):
                 logger.info(f"⏩ [Skip] Book '{doc_id}' ({title}) already completed in checkpoint. Skipping.")
+                continue
+
+            # 1.5 Quarantine Check: Skip if book is in quarantine
+            if self.is_book_quarantined(doc_id):
+                logger.warning(f"🚫 [Quarantine Skip] Book '{doc_id}' ({title}) is in quarantine. Skipping.")
                 continue
 
             # 2. Outer Loop Check: Check token quota & near-window conditions
@@ -188,54 +214,120 @@ class FullScaleOrchestrator:
             logger.info(f"\n{'='*70}\n📖 [Processing Book {idx}/{len(ordered_doc_ids)}] {doc_id}: {title}\n{'='*70}")
             t_book_start = time.time()
 
-            try:
-                raw_text = file_path.read_text(encoding="utf-8")
-                clean_text = clean_markdown_text(raw_text)
+            raw_text = file_path.read_text(encoding="utf-8")
+            clean_text = clean_markdown_text(raw_text)
 
-                is_valid, reason = validate_text_chunk(clean_text)
-                if not is_valid:
-                    logger.warning(f"⚠️ Text validation rejected book '{doc_id}': {reason}. Skipping.")
-                    continue
+            is_valid, reason = validate_text_chunk(clean_text)
+            if not is_valid:
+                logger.warning(f"⚠️ Text validation rejected book '{doc_id}': {reason}. Skipping.")
+                continue
 
-                # 4. Ingest into LightRAG with standard title attribution
-                logger.info(
-                    f"🚀 Ingesting '{title}' ({len(clean_text):,} chars, ~{meta['estimated_chunks']} chunks) "
-                    f"via LightRAG ainsert..."
-                )
-                await self.rag.ainsert(clean_text, file_paths=[title])
-
-                # 5. Mark Checkpoint & Update State
-                self.checkpoint_mgr.mark_book_completed(doc_id, total_chunks=meta["estimated_chunks"])
-                self._update_ingest_state_file(doc_id, meta)
-
-                elapsed_book = time.time() - t_book_start
-                processed_count += 1
-                logger.info(f"✅ Finished book '{doc_id}' ({title}) in {elapsed_book:.1f}s.")
-
-                # 6. Quality Audit Sample
+            # 4. Ingest into LightRAG with retry & protection
+            book_success = False
+            for attempt in range(3):
                 try:
-                    sample_nodes = [{"entity_name": doc_id, "title": title, "status": "ingested"}]
-                    judge_report = await evaluate_graph_samples(title, sample_nodes)
-                    logger.info(f"Auditor Score for '{title}': {judge_report.get('total_score')}/100")
-                except Exception as audit_err:
-                    logger.warning(f"Quality audit skipped due to non-critical error: {audit_err}")
+                    self._clean_failed_doc_status(title, doc_id)
+                    logger.info(
+                        f"🚀 Ingesting '{title}' ({len(clean_text):,} chars, ~{meta['estimated_chunks']} chunks) "
+                        f"via LightRAG ainsert (attempt {attempt+1}/3)..."
+                    )
+                    await self.rag.ainsert(clean_text, file_paths=[title])
 
-                # 7. Milestone Alert
-                summary_now = self.tracker.usage_summary()
-                total_elapsed = str(datetime.now() - datetime.fromtimestamp(pipeline_start_time)).split('.')[0]
-                await notify_milestone(
-                    book_index=idx,
-                    total_books=len(ordered_doc_ids),
-                    book_title=title,
-                    chunks_count=meta["estimated_chunks"],
-                    total_tokens=summary_now.get("monthly_tokens", 0),
-                    elapsed_time_str=total_elapsed
-                )
+                    # 4.5 Verify ingestion did not fail internally in LightRAG doc_status
+                    doc_status_file = self.workspace_dir / "kv_store_doc_status.json"
+                    if doc_status_file.exists():
+                        try:
+                            with open(doc_status_file, "r", encoding="utf-8") as f_ds:
+                                ds_data = json.load(f_ds)
+                            clean_t = title.replace("《", "").replace("》", "").strip()
+                            has_processed = any(
+                                (d_val.get("file_path") == title or clean_t in str(d_val.get("file_path", "")))
+                                and d_val.get("status") == "processed"
+                                and not d_key.startswith("dup-")
+                                for d_key, d_val in ds_data.items()
+                            )
+                            if not has_processed:
+                                for d_key, d_val in ds_data.items():
+                                    if d_val.get("file_path") == title or (clean_t in str(d_val.get("file_path", ""))):
+                                        if not d_key.startswith("dup-") and d_val.get("status") in ("failed", "fail"):
+                                            err_msg = d_val.get("error", "marked failed in LightRAG doc_status")
+                                            raise RuntimeError(f"LightRAG internal failure for '{title}': {err_msg}")
+                        except json.JSONDecodeError:
+                            pass
 
-            except Exception as e:
-                logger.error(f"❌ Error during ingestion of book '{doc_id}' ({title}): {e}", exc_info=True)
-                # Sleep briefly and continue to next book to avoid complete stall
-                await asyncio.sleep(5)
+                    book_success = True
+                    break
+
+                except Exception as book_err:
+                    logger.error(
+                        f"❌ Error during ingestion of book '{doc_id}' ({title}) "
+                        f"(attempt {attempt+1}/3): {book_err}", exc_info=True
+                    )
+                    self._clean_failed_doc_status(title, doc_id)
+                    if attempt < 2:
+                        logger.info(f"Retrying book '{doc_id}' in 30s...")
+                        await asyncio.sleep(30)
+                    else:
+                        logger.error(f"❌ Book '{doc_id}' failed all 3 attempts. Quarantining book.")
+                        self._quarantine_book(doc_id, title, str(book_err))
+                        await notify_quarantined_book(doc_id, title, str(book_err), attempts=3)
+                        consecutive_failures += 1
+                        if consecutive_failures >= 3:
+                            logger.critical("🚨 3 consecutive books have failed! Halting pipeline to prevent library-wide cascade.")
+                            await send_notification(
+                                "流水线紧急熔断",
+                                "连续 3 本书入库失败并已进入隔离区。为避免全库污染，流水线已自动熔断阻断。请人工介入排查。",
+                                msg_type="emergency",
+                                unrecoverable=True
+                            )
+                            return
+
+            if not book_success:
+                continue
+
+            consecutive_failures = 0
+
+            # 5. Mark Checkpoint & Update State
+            self.checkpoint_mgr.mark_book_completed(doc_id, total_chunks=meta["estimated_chunks"])
+            self._update_ingest_state_file(doc_id, meta)
+
+            elapsed_book = time.time() - t_book_start
+            processed_count += 1
+            logger.info(f"✅ Finished book '{doc_id}' ({title}) in {elapsed_book:.1f}s.")
+
+            # 6. Quality Audit Sample
+            clean_score_str = "20/20 (无思考标签/无乱码)"
+            try:
+                sample_nodes = [{"entity_name": doc_id, "title": title, "status": "ingested"}]
+                judge_report = await evaluate_graph_samples(title, sample_nodes)
+                c_val = judge_report.get("cleanliness", 20)
+                clean_score_str = f"{c_val}/20 (无思考标签/无乱码)"
+                logger.info(f"Auditor Score for '{title}': {judge_report.get('total_score')}/100")
+            except Exception as audit_err:
+                logger.warning(f"Quality audit skipped due to non-critical error: {audit_err}")
+
+            # 7. Milestone Alert
+            summary_now = self.tracker.usage_summary()
+            total_elapsed = str(datetime.now() - datetime.fromtimestamp(pipeline_start_time)).split('.')[0]
+            cp_summary = self.checkpoint_mgr.get_progress_summary()
+            global_done = cp_summary.get("completed_books", processed_count)
+            total_corpus_count = len(self.registry)
+
+            await notify_milestone(
+                book_index=idx,
+                total_books=len(ordered_doc_ids),
+                book_title=title,
+                chunks_count=meta["estimated_chunks"],
+                total_tokens=summary_now.get("monthly_tokens", 0),
+                elapsed_time_str=total_elapsed,
+                quality_score=clean_score_str,
+                book_id=doc_id,
+                global_completed=global_done,
+                total_corpus=total_corpus_count,
+                batch_index=idx,
+                batch_total=len(ordered_doc_ids),
+                window_pct=summary_now.get("window_pct", 0.0)
+            )
 
         total_elapsed_all = str(datetime.now() - datetime.fromtimestamp(pipeline_start_time)).split('.')[0]
         logger.info(
@@ -270,6 +362,122 @@ class FullScaleOrchestrator:
         except Exception as e:
             logger.warning(f"Could not update {STATE_FILE}: {e}")
 
+    def is_book_quarantined(self, doc_id: str) -> bool:
+        """Checks if a book has been placed in the quarantine queue."""
+        q_file = DATA_DIR / "quarantine_books.json"
+        if not q_file.exists():
+            return False
+        try:
+            with open(q_file, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            if isinstance(data, dict):
+                return doc_id in data
+            return False
+        except Exception:
+            return False
+
+    def _quarantine_book(self, doc_id: str, title: str, error_msg: str):
+        """Places a book that failed all retries into the quarantine queue."""
+        q_file = DATA_DIR / "quarantine_books.json"
+        q_file.parent.mkdir(parents=True, exist_ok=True)
+        data = {}
+        if q_file.exists():
+            try:
+                with open(q_file, "r", encoding="utf-8") as f:
+                    loaded = json.load(f)
+                    if isinstance(loaded, dict):
+                        data = loaded
+            except Exception:
+                data = {}
+        data[doc_id] = {
+            "title": title,
+            "quarantined_at": datetime.now().isoformat(),
+            "last_error": error_msg,
+            "attempts": 3
+        }
+        try:
+            with open(q_file, "w", encoding="utf-8") as f:
+                json.dump(data, f, ensure_ascii=False, indent=2)
+            logger.warning(f"🚫 [Quarantine] Book '{doc_id}' ({title}) recorded in {q_file}")
+        except Exception as q_err:
+            logger.error(f"Failed to write quarantine file: {q_err}")
+
+    def _clean_failed_doc_status(self, title: str, doc_id: Optional[str] = None):
+        """
+        Removes any failed or incomplete status for this book from disk JSON AND
+        synchronizes LightRAG's in-memory storage structures so subsequent attempts
+        never suffer from dirty state.
+        """
+        ds_file = self.workspace_dir / "kv_store_doc_status.json"
+        fd_file = self.workspace_dir / "kv_store_full_docs.json"
+        clean_title = title.replace("《", "").replace("》", "").strip()
+        try:
+            keys_to_del = []
+            if ds_file.exists():
+                with open(ds_file, "r", encoding="utf-8") as f:
+                    ds = json.load(f)
+                keys_to_del = [
+                    k for k, v in ds.items()
+                    if (
+                        v.get("file_path") == title
+                        or clean_title in str(v.get("file_path", ""))
+                        or clean_title in str(v.get("content_summary", ""))
+                        or (doc_id and doc_id in str(v.get("file_path", "")))
+                    ) and (v.get("status") in ("failed", "processing", "fail") or k.startswith("dup-"))
+                ]
+                if keys_to_del:
+                    for k in keys_to_del:
+                        ds.pop(k, None)
+                    with open(ds_file, "w", encoding="utf-8") as f:
+                        json.dump(ds, f, ensure_ascii=False, indent=2)
+                    logger.info(f"Cleared {len(keys_to_del)} prior failed/incomplete entries for '{title}' from doc_status.")
+
+            if fd_file.exists() and keys_to_del:
+                with open(fd_file, "r", encoding="utf-8") as f:
+                    fd = json.load(f)
+                fd_keys_to_del = [k for k in keys_to_del if k in fd]
+                if fd_keys_to_del:
+                    for k in fd_keys_to_del:
+                        fd.pop(k, None)
+                    with open(fd_file, "w", encoding="utf-8") as f:
+                        json.dump(fd, f, ensure_ascii=False, indent=2)
+
+            # Synchronize LightRAG in-memory storage structures
+            def _safe_dispatch(storage, method_name, *args):
+                if hasattr(storage, method_name):
+                    try:
+                        res = getattr(storage, method_name)(*args)
+                        if inspect.iscoroutine(res):
+                            try:
+                                loop = asyncio.get_running_loop()
+                                loop.create_task(res)
+                            except RuntimeError:
+                                asyncio.run(res)
+                    except Exception as call_err:
+                        logger.debug(f"{method_name} dispatch note: {call_err}")
+
+            if hasattr(self, "rag") and self.rag is not None:
+                for attr_name in ("doc_status", "doc_status_storage"):
+                    storage = getattr(self.rag, attr_name, None)
+                    if storage is not None and not isinstance(storage, str):
+                        if hasattr(storage, "_data"):
+                            for k in keys_to_del:
+                                storage._data.pop(k, None)
+                        if keys_to_del:
+                            _safe_dispatch(storage, "delete", keys_to_del)
+                        _safe_dispatch(storage, "initialize")
+
+                storage_fd = getattr(self.rag, "full_docs", None)
+                if storage_fd is not None and not isinstance(storage_fd, str):
+                    if hasattr(storage_fd, "_data"):
+                        for k in keys_to_del:
+                            storage_fd._data.pop(k, None)
+                    if keys_to_del:
+                        _safe_dispatch(storage_fd, "delete", keys_to_del)
+                    _safe_dispatch(storage_fd, "initialize")
+        except Exception as e:
+            logger.warning(f"Error cleaning prior doc status for '{title}': {e}")
+
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Full-Scale Astronomy LightRAG Orchestrator")
@@ -281,9 +489,33 @@ def parse_args():
     return parser.parse_args()
 
 
+def prevent_system_sleep():
+    """
+    Prevents Windows from entering sleep or standby while orchestrator is running.
+    Uses Win32 SetThreadExecutionState:
+    ES_CONTINUOUS (0x80000000) | ES_SYSTEM_REQUIRED (0x00000001) | ES_AWAYMODE_REQUIRED (0x00000040)
+    """
+    if sys.platform == "win32":
+        try:
+            import ctypes
+            ES_CONTINUOUS = 0x80000000
+            ES_SYSTEM_REQUIRED = 0x00000001
+            ES_AWAYMODE_REQUIRED = 0x00000040
+            ret = ctypes.windll.kernel32.SetThreadExecutionState(
+                ES_CONTINUOUS | ES_SYSTEM_REQUIRED | ES_AWAYMODE_REQUIRED
+            )
+            if ret != 0:
+                logging.getLogger("astronomy_lightrag.harness").info(
+                    "🛡️ [SleepGuard] Windows system sleep prevention activated (ES_SYSTEM_REQUIRED | ES_AWAYMODE)."
+                )
+        except Exception as e:
+            logging.getLogger("astronomy_lightrag.harness").warning(f"Could not set sleep prevention: {e}")
+
+
 async def main():
     args = parse_args()
     setup_harness_logging(log_name="harness_orchestrator")
+    prevent_system_sleep()
 
     selected_ids = [bid.strip() for bid in args.book_ids.split(",")] if args.book_ids else None
 

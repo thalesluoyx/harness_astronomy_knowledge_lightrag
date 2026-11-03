@@ -943,6 +943,50 @@
       border-top: 1px solid var(--border);
       margin: 14px 0;
     }
+    .panel-content .md-table-wrapper {
+      overflow-x: auto;
+      margin: 14px 0;
+      border-radius: var(--radius-sm);
+      border: 1px solid var(--border);
+      background: rgba(11, 17, 33, 0.7);
+      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
+    }
+    .panel-content .md-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.84rem;
+      color: var(--text-normal);
+      text-align: left;
+    }
+    .panel-content .md-table th {
+      background: rgba(26, 36, 56, 0.95);
+      color: #f1f5f9;
+      font-weight: 600;
+      padding: 10px 14px;
+      border-bottom: 2px solid rgba(56, 189, 248, 0.25);
+      letter-spacing: 0.02em;
+    }
+    .panel-content .md-table td {
+      padding: 9px 14px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+      line-height: 1.5;
+    }
+    .panel-content .md-table tbody tr:nth-child(even) {
+      background: rgba(255, 255, 255, 0.015);
+    }
+    .panel-content .md-table tbody tr:hover {
+      background: rgba(56, 189, 248, 0.05);
+    }
+    .panel-content .md-table tbody tr:last-child td {
+      border-bottom: none;
+    }
+    .panel-content .md-cite {
+      color: var(--cyan);
+      font-size: 0.75rem;
+      font-weight: 500;
+      padding: 0 2px;
+      vertical-align: super;
+    }
     .chat-input-area {
       display: flex;
       gap: 12px;
@@ -1027,7 +1071,7 @@
 
     <!-- TAB: Dashboard -->
     <div id="tab-dashboard" class="tab-content active">
-      <!-- Section 1: System Macro Metrics (3 Cards) -->
+      <!-- Section 1: System Macro Metrics (4 Cards) -->
     <div class="metrics-grid">
       <!-- Card 1: Daily Token Quota Window -->
       <div class="metric-card">
@@ -1037,20 +1081,41 @@
         </div>
         <div class="token-gauge-numbers">
           <span id="tok-used" class="card-value">--</span>
-          <span class="token-gauge-max">/ 4,860,000 (90% 软限)</span>
+          <span id="tok-soft-limit-label" class="token-gauge-max">/ -- (90% 软限)</span>
         </div>
         <div class="bar-wrap">
           <div id="tok-bar" class="bar-fill" style="width: 0%"></div>
         </div>
         <div class="card-sub" id="tok-sub">
-          当前已使用 <b id="tok-pct">0.0%</b> | 窗口上限: 540万 tokens | 月度累计: <span id="tok-monthly">--</span>
+          当前已使用 <b id="tok-pct">0.0%</b> | <span id="tok-quota-label">窗口上限: --</span>
         </div>
         <div style="margin-top:6px;font-size:0.7rem;color:var(--text-dim)">
           ⏰ 每日轮转: 00-05 | 05-10 | 10-15 | 15-20 | 20-00 (末段4小时)
         </div>
       </div>
 
-      <!-- Card 2: Reset Countdown -->
+      <!-- Card 2: Cumulative Total Token Consumption -->
+      <div class="metric-card">
+        <div class="card-label">
+          <span>🌐 全任务累计消耗 Token</span>
+          <span class="icon" title="从第1本书至今所有切块抽取与消歧融合全量消耗">💎</span>
+        </div>
+        <div class="token-gauge-numbers">
+          <span id="tok-total-m" class="card-value" style="color:var(--cyan)">--</span>
+          <span class="token-gauge-max">/ 600M (月度配额)</span>
+        </div>
+        <div class="bar-wrap">
+          <div id="tok-total-bar" class="bar-fill" style="width: 0%; background: linear-gradient(90deg, #38bdf8, #818cf8)"></div>
+        </div>
+        <div class="card-sub" id="tok-total-sub">
+          精确累计: <b id="tok-total-exact" style="font-family:var(--mono);color:#fff">--</b> | 均值: ~<span id="tok-avg-book">--</span>/本
+        </div>
+        <div style="margin-top:6px;font-size:0.7rem;color:var(--text-dim)">
+          📈 从第 1 本书至今所有任务累计真实使用量
+        </div>
+      </div>
+
+      <!-- Card 3: Reset Countdown -->
       <div class="metric-card">
         <div class="card-label">
           <span>⏱️ 本时段重置倒计时</span>
@@ -1066,15 +1131,15 @@
         </div>
       </div>
 
-      <!-- Card 3: POC Overall Progress -->
+      <!-- Card 4: POC Overall Progress -->
       <div class="metric-card">
         <div class="card-label">
-          <span>📚 POC 5本书目标进度</span>
+          <span id="poc-title">📚 全库摄取目标进度</span>
           <span class="icon">🎯</span>
         </div>
         <div style="display:flex;align-items:baseline;gap:6px">
           <span id="poc-completed" class="card-value">0</span>
-          <span style="color:var(--text-dim);font-size:1.1rem;font-family:var(--mono)">/ 5 本</span>
+          <span id="poc-total-text" style="color:var(--text-dim);font-size:1.1rem;font-family:var(--mono)">/ X 本</span>
         </div>
         <div class="bar-wrap">
           <div id="poc-bar" class="bar-fill purple" style="width: 0%"></div>
@@ -1209,7 +1274,7 @@
       <div>
         <div class="section-box">
           <div class="section-header">
-            <div class="section-title">📖 Deep Sky Companions 系列（POC 5 本）</div>
+            <div class="section-title">📖 目标书籍摄取列表</div>
             <span style="font-size:0.75rem;color:var(--text-muted)">按序注入 LightRAG 知识图谱</span>
           </div>
           <div class="table-container">
@@ -1221,10 +1286,11 @@
                   <th>状态</th>
                   <th>切块进度</th>
                   <th>实体/关系</th>
+                  <th>消耗 Token</th>
                 </tr>
               </thead>
               <tbody id="books-table-body">
-                <tr><td colspan="5" style="text-align:center;padding:30px;color:var(--text-muted)">正在读取状态...</td></tr>
+                <tr><td colspan="6" style="text-align:center;padding:30px;color:var(--text-muted)">正在读取状态...</td></tr>
               </tbody>
             </table>
           </div>
@@ -1234,22 +1300,34 @@
         <div class="projection-card">
           <div class="projection-header">
             <h3>🌌 全库规模测算与耗时预估</h3>
-            <span style="font-size:0.72rem;background:rgba(56,189,248,0.1);color:var(--cyan);padding:2px 8px;border-radius:10px">
-              测算模型: 5.4M Token / 5小时
+            <span id="proj-model-badge" style="font-size:0.72rem;background:rgba(56,189,248,0.1);color:var(--cyan);padding:2px 8px;border-radius:10px">
+              测算模型: 动态配额
             </span>
           </div>
           <div class="projection-grid">
             <div class="proj-stat">
               <div class="proj-stat-label">全库书籍总数</div>
-              <div class="proj-stat-val" id="proj-total-books">154 本</div>
+              <div class="proj-stat-val" id="proj-total-books">155 本</div>
             </div>
             <div class="proj-stat">
-              <div class="proj-stat-label">单本平均耗时</div>
-              <div class="proj-stat-val" style="color:var(--cyan)">~4.5 小时</div>
+              <div class="proj-stat-label">单本综合耗时 (含休眠)</div>
+              <div class="proj-stat-val" style="color:var(--cyan)" id="proj-avg-hours">~3.5 小时</div>
             </div>
             <div class="proj-stat">
-              <div class="proj-stat-label">全库完成预计需时</div>
-              <div class="proj-stat-val" style="color:var(--amber)" id="proj-est-days">~28 - 32 天</div>
+              <div class="proj-stat-label" id="proj-est-days-label">全库完成预计需时</div>
+              <div class="proj-stat-val" style="color:var(--amber)" id="proj-est-days">~22.6 天</div>
+            </div>
+            <div class="proj-stat">
+              <div class="proj-stat-label">全任务累计已耗 Token</div>
+              <div class="proj-stat-val" style="color:var(--cyan)" id="proj-cum-tokens">--</div>
+            </div>
+            <div class="proj-stat">
+              <div class="proj-stat-label">全库预计总消耗 Token</div>
+              <div class="proj-stat-val" style="color:var(--purple)" id="proj-est-total-tokens">--</div>
+            </div>
+            <div class="proj-stat">
+              <div class="proj-stat-label">月度预算配额利用率</div>
+              <div class="proj-stat-val" style="color:#fff" id="proj-monthly-util">--</div>
             </div>
           </div>
           <div class="proj-hint">
@@ -1267,11 +1345,13 @@
             <span>📜 实时图谱抽取日志终端</span>
             <span id="log-file-name" style="font-size:0.72rem;font-family:var(--mono);color:var(--text-muted)"></span>
           </div>
-          <span style="font-size:0.72rem;color:var(--green)">● SSE 管道连通</span>
+          <span id="sse-status" style="font-size:0.72rem;color:var(--text-muted)">⏸️ 自动刷新: 关 (省流模式)</span>
         </div>
         <div class="terminal-container">
           <div class="terminal-toolbar">
             <input type="text" id="log-filter" class="terminal-search" placeholder="🔍 过滤日志（例如: Chunk, Token, LLM）" oninput="applyLogFilter()" />
+            <button id="btn-refresh-log" class="btn-tool" onclick="fetchLogsOnce()" title="手动拉取一次最新日志">🔄 刷新日志</button>
+            <button id="btn-autorefresh-log" class="btn-tool" onclick="toggleAutoRefresh()" title="开启/关闭实时日志流 (默认为关以节省 Cloudflare 流量)">⏸️ 自动刷新: 关</button>
             <button id="btn-autoscroll" class="btn-tool active" onclick="toggleAutoScroll()">⬇️ 自动滚动: 开</button>
             <button class="btn-tool" onclick="clearTerminal()">🧹 清屏</button>
           </div>
@@ -1348,11 +1428,11 @@
         </div>
         <div class="chat-input-area">
           <select id="chat-mode" class="chat-mode-select">
-            <option value="all" selected>⚡ 4 模式并行对比 (Tab 切换 · 默认)</option>
-            <option value="mix">🔀 仅综合融合模式 (mix)</option>
-            <option value="local">🔍 仅局部细节模式 (local)</option>
-            <option value="global">🌐 仅宏观全局模式 (global)</option>
-            <option value="naive">📄 仅经典向量模式 (naive)</option>
+            <option value="mix" selected>🔀 综合融合模式 (mix · 推荐极速)</option>
+            <option value="local">🔍 局部细节模式 (local)</option>
+            <option value="global">🌐 宏观全局模式 (global)</option>
+            <option value="naive">📄 经典向量模式 (naive)</option>
+            <option value="all">⚡ 4 模式并行对比 (Tab 切换 · 4路并发LLM)</option>
           </select>
           <input type="text" id="chat-input" class="chat-input" placeholder="输入您关于天文学的问题，按 Enter 发送..." onkeypress="handleChatKey(event)" />
           <button id="chat-send" class="chat-send-btn" onclick="sendChatMessage()">发 送</button>
@@ -1365,6 +1445,8 @@
     // ── Application State ─────────────────────────────────────
     let state = null;
     let autoScroll = true;
+    let autoRefresh = false; // 实时图谱抽取日志终端自动刷新，默认为关（防止 Cloudflare 流量持续消耗）
+    let evtSource = null;
     let logLines = [];
     let countdownTimer = null;
     let secondsLeft = 0;
@@ -1372,7 +1454,8 @@
     // ── Formatters ────────────────────────────────────────────
     function fmtNum(n) {
       if (n === null || n === undefined) return '--';
-      return Number(n).toLocaleString();
+      const num = Number(n);
+      return isNaN(num) ? String(n) : num.toLocaleString();
     }
 
     function formatTime(secs) {
@@ -1391,12 +1474,21 @@
       // 1. Token metrics
       const tok = data.token || {};
       const used = tok.window_tokens || 0;
-      const softLimit = tok.window_soft_limit || 4860000;
-      const pct = tok.window_pct || (used / softLimit * 100);
+      const quota = tok.window_quota || 6500000;
+      const softLimit = tok.window_soft_limit || Math.round(quota * 0.9);
+      const pct = tok.window_pct !== undefined ? tok.window_pct : (used / softLimit * 100);
 
       document.getElementById('tok-used').textContent = fmtNum(used);
       document.getElementById('tok-pct').textContent = pct.toFixed(1) + '%';
-      document.getElementById('tok-monthly').textContent = fmtNum(tok.monthly_tokens) + ' tokens';
+      if (document.getElementById('tok-soft-limit-label')) {
+        document.getElementById('tok-soft-limit-label').textContent = `/ ${fmtNum(softLimit)} (90% 软限)`;
+      }
+      if (document.getElementById('tok-quota-label')) {
+        document.getElementById('tok-quota-label').textContent = `窗口上限: ${(quota / 1e6).toFixed(1)}M tokens`;
+      }
+      if (document.getElementById('proj-model-badge')) {
+        document.getElementById('proj-model-badge').textContent = `测算模型: ${(quota / 1e6).toFixed(1)}M Token / 5小时`;
+      }
       if (document.getElementById('tok-slot-badge')) {
         document.getElementById('tok-slot-badge').textContent = tok.slot_label || '每日时段';
       }
@@ -1407,6 +1499,25 @@
         tokBar.className = 'bar-fill warning';
       } else {
         tokBar.className = 'bar-fill';
+      }
+
+      // Cumulative Token metrics (From book 1 to now)
+      const cumM = tok.cumulative_tokens_m || (tok.monthly_tokens ? (tok.monthly_tokens / 1e6).toFixed(2) + 'M' : '--');
+      const cumExact = tok.cumulative_tokens_formatted || fmtNum(tok.monthly_tokens) + ' tokens';
+      const cumPct = tok.monthly_pct || (tok.monthly_tokens ? (tok.monthly_tokens / 6e8 * 100).toFixed(1) : 0);
+      const avgBook = tok.avg_tokens_per_book_formatted || (tok.avg_tokens_per_book ? (tok.avg_tokens_per_book / 1e6).toFixed(2) + 'M' : '--');
+
+      if (document.getElementById('tok-total-m')) {
+        document.getElementById('tok-total-m').textContent = cumM;
+      }
+      if (document.getElementById('tok-total-exact')) {
+        document.getElementById('tok-total-exact').textContent = cumExact;
+      }
+      if (document.getElementById('tok-avg-book')) {
+        document.getElementById('tok-avg-book').textContent = avgBook;
+      }
+      if (document.getElementById('tok-total-bar')) {
+        document.getElementById('tok-total-bar').style.width = Math.min(100, cumPct) + '%';
       }
 
       // 2. Countdown
@@ -1426,7 +1537,7 @@
       } else {
         quotaStatusEl.innerHTML = '🟢 <span style="color:var(--green)">管道正常提取中</span>';
         liveBadge.className = 'live-badge';
-        liveText.textContent = '实时同步中';
+        liveText.textContent = autoRefresh ? '实时同步中' : '按需刷新 (省流)';
       }
 
       // 3. Active Book Stepper & Detailed Multi-Stage Metrics
@@ -1558,8 +1669,12 @@
       // 5. POC Target Progress
       const poc = data.poc || {};
       document.getElementById('poc-completed').textContent = poc.completed_books || 0;
+      if (poc.total_books) {
+          document.getElementById('poc-total-text').textContent = `/ ${poc.total_books} 本`;
+          document.getElementById('poc-title').textContent = `📚 摄取目标进度 (${poc.total_books}本)`;
+      }
       document.getElementById('poc-bar').style.width = `${poc.progress_pct}%`;
-      document.getElementById('poc-sub').textContent = `总进度: ${poc.progress_pct}% | 预估完成: 约 ${poc.est_days || 3} 天`;
+      document.getElementById('poc-sub').textContent = `总进度: ${poc.progress_pct}% | 剩余预估: 约 ${poc.est_days ?? 0} 天`;
 
       // 6. Books Table
       renderBooksTable(poc.books || []);
@@ -1569,8 +1684,25 @@
       if (full.total_books) {
         document.getElementById('proj-total-books').textContent = `${full.total_books} 本`;
       }
+      if (full.avg_hours_per_book && document.getElementById('proj-avg-hours')) {
+        document.getElementById('proj-avg-hours').textContent = `~${full.avg_hours_per_book} 小时`;
+      }
       if (full.est_days) {
-        document.getElementById('proj-est-days').textContent = `~${Math.round(full.est_days)} 天`;
+        if (full.remaining_days !== undefined) {
+          document.getElementById('proj-est-days-label').textContent = `全库总需时 (剩余 ${full.remaining_books} 本)`;
+          document.getElementById('proj-est-days').textContent = `~${full.est_days} 天 (剩 ~${full.remaining_days} 天)`;
+        } else {
+          document.getElementById('proj-est-days').textContent = `~${full.est_days} 天`;
+        }
+      }
+      if (document.getElementById('proj-cum-tokens')) {
+        document.getElementById('proj-cum-tokens').textContent = full.total_tokens_consumed_m ? `${full.total_tokens_consumed_m} (${full.total_tokens_consumed_formatted || '--'})` : '--';
+      }
+      if (document.getElementById('proj-est-total-tokens')) {
+        document.getElementById('proj-est-total-tokens').textContent = full.total_est_tokens_m ? `~${full.total_est_tokens_m}` : '--';
+      }
+      if (document.getElementById('proj-monthly-util')) {
+        document.getElementById('proj-monthly-util').textContent = full.monthly_util_pct !== undefined ? `${full.monthly_util_pct}% (600M上限)` : '--';
       }
 
       // 8. Log filename
@@ -1609,6 +1741,8 @@
           ? `${fmtNum(b.entities)} 实体 / ${fmtNum(b.relations)} 关系`
           : '--';
 
+        const tokenInfo = b.tokens_formatted || '--';
+
         return `
           <tr>
             <td class="num">${b.index}</td>
@@ -1618,6 +1752,7 @@
             <td>${badgeHtml}</td>
             <td style="font-family:var(--mono);font-size:0.8rem">${chunkInfo}</td>
             <td style="font-family:var(--mono);font-size:0.8rem;color:var(--text-muted)">${entRelInfo}</td>
+            <td style="font-family:var(--mono);font-size:0.8rem;color:var(--cyan)">${tokenInfo}</td>
           </tr>
         `;
       }).join('');
@@ -1691,18 +1826,86 @@
     }
 
     // ── SSE & Fetching ────────────────────────────────────────
+    // ── Log Terminal Auto-Refresh & SSE Controls (默认关，防止 Cloudflare 流量持续消耗) ──
+    function updateAutoRefreshUI() {
+      const btn = document.getElementById('btn-autorefresh-log');
+      const sseStatus = document.getElementById('sse-status');
+      if (autoRefresh) {
+        if (btn) {
+          btn.className = 'btn-tool active';
+          btn.textContent = '▶️ 自动刷新: 开';
+        }
+        if (sseStatus) {
+          sseStatus.style.color = 'var(--green)';
+          sseStatus.textContent = '● SSE 实时流连通';
+        }
+      } else {
+        if (btn) {
+          btn.className = 'btn-tool';
+          btn.textContent = '⏸️ 自动刷新: 关';
+        }
+        if (sseStatus) {
+          sseStatus.style.color = 'var(--text-muted)';
+          sseStatus.textContent = '⏸️ 自动刷新: 关 (省流模式)';
+        }
+      }
+    }
+
+    function toggleAutoRefresh() {
+      autoRefresh = !autoRefresh;
+      updateAutoRefreshUI();
+      if (autoRefresh) {
+        startSSE();
+      } else {
+        stopSSE();
+      }
+    }
+
+    async function fetchLogsOnce() {
+      try {
+        const btn = document.getElementById('btn-refresh-log');
+        if (btn) btn.textContent = '⏳ 拉取中...';
+        const tokenQuery = window.location.search || '';
+        const sep = tokenQuery.includes('?') ? '&' : '?';
+        const res = await fetch('/api/logs' + tokenQuery + sep + 'tail=100');
+        const data = await res.json();
+        if (data.lines && data.lines.length > 0) {
+          logLines = data.lines;
+          renderTerminal();
+        }
+        if (data.filename) {
+          const fnEl = document.getElementById('log-file-name');
+          if (fnEl) fnEl.textContent = data.filename;
+        }
+        if (btn) btn.textContent = '🔄 刷新日志';
+      } catch (err) {
+        console.error('Failed to fetch logs:', err);
+        const btn = document.getElementById('btn-refresh-log');
+        if (btn) btn.textContent = '🔄 刷新日志';
+      }
+    }
+
     async function refreshState() {
       try {
-        const res = await fetch('/api/state');
+        const tokenQuery = window.location.search || '';
+        const res = await fetch('/api/state' + tokenQuery);
         const data = await res.json();
         renderState(data);
+        if (!autoRefresh) {
+          fetchLogsOnce();
+        }
       } catch (err) {
         console.error('Failed to fetch state:', err);
       }
     }
 
     function startSSE() {
-      const evtSource = new EventSource('/stream');
+      if (evtSource) {
+        evtSource.close();
+        evtSource = null;
+      }
+      const tokenQuery = window.location.search || '';
+      evtSource = new EventSource('/stream' + tokenQuery);
 
       evtSource.onmessage = function(e) {
         try {
@@ -1710,7 +1913,7 @@
           if (payload.type === 'ping') return;
           if (payload.type === 'update') {
             if (payload.state) renderState(payload.state);
-            if (payload.new_logs && payload.new_logs.length > 0) {
+            if (autoRefresh && payload.new_logs && payload.new_logs.length > 0) {
               appendLogs(payload.new_logs);
             }
           }
@@ -1722,9 +1925,28 @@
       evtSource.onerror = function() {
         const liveBadge = document.getElementById('live-badge');
         const liveText = document.getElementById('live-text');
-        liveBadge.className = 'live-badge offline';
-        liveText.textContent = '重连中...';
+        if (liveBadge) liveBadge.className = 'live-badge offline';
+        if (liveText) liveText.textContent = '重连中...';
+        const sseStatus = document.getElementById('sse-status');
+        if (sseStatus && autoRefresh) {
+          sseStatus.style.color = 'var(--amber)';
+          sseStatus.textContent = '⚠️ SSE 正在重连...';
+        }
       };
+    }
+
+    function stopSSE() {
+      if (evtSource) {
+        evtSource.close();
+        evtSource = null;
+      }
+      updateAutoRefreshUI();
+      const liveBadge = document.getElementById('live-badge');
+      const liveText = document.getElementById('live-text');
+      if (liveBadge && !state?.token?.is_paused) {
+        liveBadge.className = 'live-badge';
+        liveText.textContent = '省流模式';
+      }
     }
 
     // ── Local Clocks & Countdowns ─────────────────────────────
@@ -1763,6 +1985,68 @@
       });
     }
 
+    function parseMarkdownTables(text) {
+      function extractCells(rowLine) {
+        let t = rowLine.trim();
+        if (t.startsWith('|')) t = t.slice(1);
+        if (t.endsWith('|')) t = t.slice(0, -1);
+        return t.split('|').map(c => c.trim());
+      }
+
+      function isTableRow(line) {
+        const t = line.trim();
+        return t.startsWith('|') && extractCells(t).length > 1;
+      }
+
+      function isSepRow(line) {
+        const cells = extractCells(line);
+        return cells.length > 0 && cells.every(c => /^:?-+:?$/.test(c));
+      }
+
+      const lines = text.split('\n');
+      const result = [];
+      let i = 0;
+
+      while (i < lines.length) {
+        if (i + 1 < lines.length && isTableRow(lines[i]) && isSepRow(lines[i + 1])) {
+          const headerCells = extractCells(lines[i]);
+          const sepCells = extractCells(lines[i + 1]);
+          const aligns = sepCells.map(s => {
+            const left = s.startsWith(':');
+            const right = s.endsWith(':');
+            if (left && right) return 'center';
+            if (right) return 'right';
+            return 'left';
+          });
+
+          let tableHtml = '\n\n<div class="md-table-wrapper"><table class="md-table"><thead><tr>';
+          headerCells.forEach((h, idx) => {
+            const align = aligns[idx] || 'left';
+            tableHtml += `<th style="text-align:${align}">${h}</th>`;
+          });
+          tableHtml += '</tr></thead><tbody>';
+
+          i += 2;
+          while (i < lines.length && isTableRow(lines[i])) {
+            const cells = extractCells(lines[i]);
+            tableHtml += '<tr>';
+            cells.forEach((c, idx) => {
+              const align = aligns[idx] || 'left';
+              tableHtml += `<td style="text-align:${align}">${c}</td>`;
+            });
+            tableHtml += '</tr>';
+            i++;
+          }
+          tableHtml += '</tbody></table></div>\n\n';
+          result.push(tableHtml);
+        } else {
+          result.push(lines[i]);
+          i++;
+        }
+      }
+      return result.join('\n');
+    }
+
     function renderMarkdown(md) {
       if (!md) return '<span style="color:var(--text-dim)">（无返回内容）</span>';
       
@@ -1777,34 +2061,40 @@
         return '<pre class="md-code-block"><code>' + code.trim() + '</code></pre>';
       });
 
-      // 3. Inline code
+      // 3. Markdown Tables (GFM formatted)
+      html = parseMarkdownTables(html);
+
+      // 4. Inline code
       html = html.replace(/`([^`]+)`/g, '<code class="md-inline-code">$1</code>');
 
-      // 4. Blockquotes
+      // 5. Blockquotes
       html = html.replace(/^&gt;\s*(.+)$/gm, '<blockquote class="md-quote">$1</blockquote>');
 
-      // 5. Headers
+      // 6. Headers
       html = html.replace(/^### (.*$)/gim, '<h4 class="md-h4">$1</h4>');
       html = html.replace(/^## (.*$)/gim, '<h3 class="md-h3">$1</h3>');
       html = html.replace(/^# (.*$)/gim, '<h2 class="md-h2">$1</h2>');
 
-      // 6. Bold & Italic
+      // 7. Bold & Italic
       html = html.replace(/\*\*([^*]+)\*\*/g, '<strong class="md-bold">$1</strong>');
       html = html.replace(/\*([^*]+)\*/g, '<em>$1</em>');
 
-      // 7. Lists
+      // 8. Citations / Footnotes like [^1], [^2]
+      html = html.replace(/\[\^(\d+)\]/g, '<sup class="md-cite">[$1]</sup>');
+
+      // 9. Lists
       html = html.replace(/^\s*[-*]\s+(.+)$/gm, '<li class="md-li">$1</li>');
       html = html.replace(/((?:<li class="md-li">.*?<\/li>\s*)+)/gs, '<ul class="md-ul">$1</ul>');
 
-      // 8. Horizontal rules
+      // 10. Horizontal rules
       html = html.replace(/^---$/gm, '<hr class="md-hr"/>');
 
-      // 9. Clean paragraph formatting without empty blocks
+      // 11. Clean paragraph formatting without empty blocks
       html = html.trim().split(/\n\n+/).map(block => {
         block = block.trim();
         if (!block) return '';
-        if (/^<(h[1-4]|ul|ol|pre|blockquote|hr)/i.test(block)) {
-          return block.replace(/\n/g, '<br/>');
+        if (/^<(h[1-4]|ul|ol|pre|blockquote|hr|div|table)/i.test(block)) {
+          return block;
         }
         return '<p class="md-p">' + block.replace(/\n/g, '<br/>') + '</p>';
       }).join('');
@@ -1999,9 +2289,11 @@
       }
     }
 
-    // Initial load
+    // Initial load (按需拉取初始快照，不开启持续流，节省 Cloudflare 流量)
     refreshState();
-    startSSE();
+    fetchLogsOnce();
+    updateAutoRefreshUI();
+    // 默认不启动 startSSE()，自动刷新保持关闭
   </script>
 </body>
 </html>

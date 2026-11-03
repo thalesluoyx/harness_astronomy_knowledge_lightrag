@@ -52,3 +52,16 @@ def mock_rag():
     rag.doc_status = mock_ds
 
     return rag
+
+@pytest.fixture
+def mock_tracker():
+    """Mocks token tracker to avoid any real rate limiting or waiting during tests."""
+    tracker = AsyncMock()
+    tracker.wait_if_limit_reached = AsyncMock()
+    tracker.usage_summary = MagicMock(return_value={
+        "window_pct": 10.0,
+        "window_tokens": 500000,
+        "window_quota": 5400000,
+        "monthly_tokens": 10000000
+    })
+    return tracker

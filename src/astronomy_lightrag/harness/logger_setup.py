@@ -18,6 +18,7 @@ PACKAGE_DIR = CURRENT_DIR.parent
 SRC_DIR = PACKAGE_DIR.parent
 PROJECT_ROOT = SRC_DIR.parent
 LOGS_DIR = PROJECT_ROOT / "logs"
+BILINGUAL_OUTPUT_DIR = PROJECT_ROOT.parent / "bilingual_output"
 
 
 class TqdmFilter(logging.Filter):
@@ -62,11 +63,19 @@ def setup_harness_logging(
         except Exception:
             pass
 
-    # File Handler
+    # File Handler - Local logs dir
     file_handler = logging.FileHandler(str(log_file), encoding="utf-8")
     file_handler.setLevel(level)
     file_handler.setFormatter(file_formatter)
     file_handler.addFilter(TqdmFilter())
+
+    # File Handler - bilingual_output dir (project rule compliance)
+    BILINGUAL_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    bilingual_log_file = BILINGUAL_OUTPUT_DIR / f"{log_name}_{today_str}.log"
+    bilingual_file_handler = logging.FileHandler(str(bilingual_log_file), encoding="utf-8")
+    bilingual_file_handler.setLevel(level)
+    bilingual_file_handler.setFormatter(file_formatter)
+    bilingual_file_handler.addFilter(TqdmFilter())
 
     # Console Handler
     console_handler = logging.StreamHandler(sys.stdout)
@@ -75,11 +84,13 @@ def setup_harness_logging(
 
     # Avoid adding duplicate handlers if already attached
     existing_file_handlers = [
-        h for h in root_logger.handlers
-        if isinstance(h, logging.FileHandler) and getattr(h, 'baseFilename', None) == str(log_file)
+        getattr(h, 'baseFilename', None) for h in root_logger.handlers
+        if isinstance(h, logging.FileHandler)
     ]
-    if not existing_file_handlers:
+    if str(log_file) not in existing_file_handlers:
         root_logger.addHandler(file_handler)
+    if str(bilingual_log_file) not in existing_file_handlers:
+        root_logger.addHandler(bilingual_file_handler)
 
     if not any(isinstance(h, logging.StreamHandler) and not isinstance(h, logging.FileHandler) for h in root_logger.handlers):
         root_logger.addHandler(console_handler)

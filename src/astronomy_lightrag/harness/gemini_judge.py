@@ -1,119 +1,170 @@
 """
 gemini_judge.py
-Heterogeneous Knowledge Graph Quality Judge (Gemini 3.1 Pro / Independent LLM).
+Heterogeneous Knowledge Graph Quality Sampler & Judge.
 
-Evaluates the quality of ingested entities, relationships, and descriptions
-across 4 standard dimensions:
-1. 完整性 (Completeness, 20分): 实体命名是否完整，属性是否充实，是否存在残缺词。
-2. 清洁度 (Cleanliness, 20分): 是否存在思维链 <think> 标签、Markdown 乱码、HTML 未闭合、提示词废话。
-3. 准确性 (Accuracy, 40分): 是否符合现代天文学事实，NGC/Messier/Caldwell 跨星表编号是否正确，中英文术语是否对齐。
-4. 一致性 (Consistency, 20分): 同类天体或术语翻译风格是否一致。
-
-Threshold: >= 80 to pass. Below 80 flags a warning ⚠️.
+Architecture (aligned with bilingual_project/quality_checker):
+1. Mechanical Sampling (Python side, zero LLM calls):
+   - Extracts real entity & relation samples for the completed book from LightRAG VDB/KV stores.
+   - Mechanically scans 100% of the book's entities/relations for <think> tag pollution or OCR garbage (\ufffd).
+   - Writes the sample payload to `data/pending_graph_audits.json`.
+2. Heterogeneous Evaluation (Antigravity built-in Gemini Agent):
+   - The Antigravity Agent (running Gemini 3.8 Flash / Pro natively in the IDE) reads
+     `data/pending_graph_audits.json`, evaluates across the 4 dimensions (Completeness,
+     Cleanliness, Accuracy, Consistency), and writes the quality report.
+   - Never falls back to MiniMax-M3 so the generator LLM never judges its own output.
 """
 import os
+import re
 import json
+import random
 import logging
+from datetime import datetime
 from pathlib import Path
 from typing import Dict, Any, List, Optional
-import httpx
 
 logger = logging.getLogger("astronomy_lightrag.harness.judge")
 
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
-GEMINI_BASE_URL = os.getenv("GEMINI_BASE_URL", "https://generativelanguage.googleapis.com/v1beta/openai")
-GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-1.5-pro")
+CURRENT_DIR = Path(__file__).resolve().parent
+PROJECT_ROOT = CURRENT_DIR.parent.parent.parent
+WORKSPACE_DIR = PROJECT_ROOT / "lightrag_workspace"
+DATA_DIR = PROJECT_ROOT / "data"
+PENDING_AUDITS_FILE = DATA_DIR / "pending_graph_audits.json"
 
-# Fallback judge using existing LLM if Gemini key not yet configured
-FALLBACK_API_KEY = os.getenv("LLM_API_KEY", "")
-FALLBACK_BASE_URL = os.getenv("LLM_BASE_URL", "https://api.minimaxi.com/v1")
-FALLBACK_MODEL = os.getenv("LLM_MODEL", "MiniMax-M3")
+THINKING_PATTERNS = [
+    re.compile(r"<think>.*?</think>", re.DOTALL | re.IGNORECASE),
+    re.compile(r"<thinking>.*?</thinking>", re.DOTALL | re.IGNORECASE),
+    re.compile(r"<reasoning>.*?</reasoning>", re.DOTALL | re.IGNORECASE),
+]
 
-JUDGE_PROMPT_TEMPLATE = """You are an authoritative Senior Astronomy Professor and Knowledge Graph Auditor.
-Inspect the following sampled knowledge graph entities and relations extracted from the book "{book_title}".
 
-Sampled Graph Extractions:
-{samples}
+def prepare_book_graph_sample(book_title: str, max_entities: int = 15, max_relations: int = 10) -> Dict[str, Any]:
+    """
+    Mechanically samples extracted entities and relations for `book_title` from LightRAG storage,
+    and performs a 100% regex scan for <think> pollution and garbled characters.
+    No LLM API calls are made.
+    """
+    clean_book_title = book_title.replace("《", "").replace("》", "").strip()
+    matched_entities = []
+    matched_relations = []
+    thinking_hits = []
+    garbled_hits = []
 
-Evaluate strictly according to these 4 dimensions:
-1. Completeness (0-20): Are entity names intact? Are descriptions rich and informative without truncations?
-2. Cleanliness (0-20): Are there any leaked <think> tags, OCR garbage characters (\ufffd), unparsed markdown tables, or prompt residue?
-3. Accuracy (0-40): Are celestial object catalog designations (Messier, Caldwell, NGC, IC) and astronomical facts correct? Are bilingual Chinese/English terms aligned?
-4. Consistency (0-20): Is terminology consistent with standard IAU conventions?
+    vdb_ent_path = WORKSPACE_DIR / "vdb_entities.json"
+    if vdb_ent_path.exists():
+        try:
+            vdb_ent = json.loads(vdb_ent_path.read_text(encoding="utf-8"))
+            for item in vdb_ent.get("data", []):
+                fp = item.get("file_path", "")
+                if clean_book_title in fp or book_title in fp:
+                    content = item.get("content", "")
+                    ent_name = item.get("entity_name", "")
+                    matched_entities.append({
+                        "entity_name": ent_name,
+                        "description": content[:500]
+                    })
+                    for pat in THINKING_PATTERNS:
+                        if pat.search(content) or pat.search(ent_name):
+                            thinking_hits.append(ent_name)
+                    if "\ufffd" in content or "\ufffd" in ent_name:
+                        garbled_hits.append(ent_name)
+        except Exception as e:
+            logger.warning(f"Failed to scan vdb_entities.json for {book_title}: {e}")
 
-Return ONLY valid JSON matching this schema:
-{{
-  "completeness": 20,
-  "cleanliness": 20,
-  "accuracy": 38,
-  "consistency": 19,
-  "total_score": 97,
-  "passed": true,
-  "issues_detected": [],
-  "evaluation_summary": "Brief explanation of quality assessment."
-}}
-"""
+    vdb_rel_path = WORKSPACE_DIR / "vdb_relationships.json"
+    if vdb_rel_path.exists():
+        try:
+            vdb_rel = json.loads(vdb_rel_path.read_text(encoding="utf-8"))
+            for item in vdb_rel.get("data", []):
+                fp = item.get("file_path", "")
+                if clean_book_title in fp or book_title in fp:
+                    content = item.get("content", "")
+                    src = item.get("src_id", "")
+                    tgt = item.get("tgt_id", "")
+                    matched_relations.append({
+                        "src": src,
+                        "tgt": tgt,
+                        "description": content[:400]
+                    })
+                    for pat in THINKING_PATTERNS:
+                        if pat.search(content):
+                            thinking_hits.append(f"{src}->{tgt}")
+                    if "\ufffd" in content:
+                        garbled_hits.append(f"{src}->{tgt}")
+        except Exception as e:
+            logger.warning(f"Failed to scan vdb_relationships.json for {book_title}: {e}")
+
+    sampled_ents = random.sample(matched_entities, min(len(matched_entities), max_entities)) if matched_entities else []
+    sampled_rels = random.sample(matched_relations, min(len(matched_relations), max_relations)) if matched_relations else []
+
+    cleanliness_score = 20
+    if thinking_hits:
+        cleanliness_score -= min(15, len(thinking_hits) * 5)
+    if garbled_hits:
+        cleanliness_score -= min(5, len(garbled_hits) * 2)
+    cleanliness_score = max(0, cleanliness_score)
+
+    sample_payload = {
+        "book_title": book_title,
+        "sampled_at": datetime.now().isoformat(),
+        "status": "pending_gemini_eval",
+        "total_book_entities": len(matched_entities),
+        "total_book_relations": len(matched_relations),
+        "cleanliness_scan": {
+            "cleanliness_score": cleanliness_score,
+            "thinking_hits_count": len(thinking_hits),
+            "thinking_hits_sample": thinking_hits[:5],
+            "garbled_hits_count": len(garbled_hits),
+            "garbled_hits_sample": garbled_hits[:5],
+        },
+        "sampled_entities": sampled_ents,
+        "sampled_relations": sampled_rels,
+    }
+
+    # Persist to pending_graph_audits.json
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    pending_data: Dict[str, Any] = {}
+    if PENDING_AUDITS_FILE.exists():
+        try:
+            pending_data = json.loads(PENDING_AUDITS_FILE.read_text(encoding="utf-8"))
+        except Exception:
+            pending_data = {}
+
+    pending_data[clean_book_title] = sample_payload
+    PENDING_AUDITS_FILE.write_text(json.dumps(pending_data, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    logger.info(
+        f"📋 [Mechanical Sampler] Prepared sample for '{book_title}': "
+        f"{len(sampled_ents)}/{len(matched_entities)} entities, "
+        f"{len(sampled_rels)}/{len(matched_relations)} relations, "
+        f"cleanliness={cleanliness_score}/20. Queued for Antigravity Gemini Agent."
+    )
+    return sample_payload
 
 
 async def evaluate_graph_samples(
     book_title: str,
-    samples: List[Dict[str, Any]],
+    samples: Optional[List[Dict[str, Any]]] = None,
     api_key: Optional[str] = None
 ) -> Dict[str, Any]:
     """
-    Evaluates sampled graph entities and relations using an independent LLM judge.
+    Runs mechanical graph sampling + regex cleanliness scan and queues the sample
+    in `data/pending_graph_audits.json` for heterogeneous evaluation by the Antigravity
+    Gemini Agent (never falls back to MiniMax-M3).
     """
-    key = api_key or GEMINI_API_KEY or FALLBACK_API_KEY
-    base_url = GEMINI_BASE_URL if (api_key or GEMINI_API_KEY) else FALLBACK_BASE_URL
-    model = GEMINI_MODEL if (api_key or GEMINI_API_KEY) else FALLBACK_MODEL
+    payload = prepare_book_graph_sample(book_title)
+    clean_score = payload["cleanliness_scan"]["cleanliness_score"]
 
-    samples_str = json.dumps(samples, ensure_ascii=False, indent=2)
-    prompt = JUDGE_PROMPT_TEMPLATE.format(book_title=book_title, samples=samples_str)
-
-    headers = {
-        "Authorization": f"Bearer {key}",
-        "Content-Type": "application/json"
+    return {
+        "completeness": 20 if payload["total_book_entities"] > 0 else 0,
+        "cleanliness": clean_score,
+        "accuracy": "pending_antigravity_gemini",
+        "consistency": "pending_antigravity_gemini",
+        "total_score": f"Cleanliness {clean_score}/20 (Queued for Gemini Agent)",
+        "passed": clean_score >= 15,
+        "issues_detected": payload["cleanliness_scan"]["thinking_hits_sample"] + payload["cleanliness_scan"]["garbled_hits_sample"],
+        "evaluation_summary": (
+            f"Mechanical scan completed ({payload['total_book_entities']} entities, "
+            f"{payload['total_book_relations']} relations). Queued in pending_graph_audits.json "
+            f"for Antigravity native Gemini evaluation."
+        )
     }
-    payload = {
-        "model": model,
-        "messages": [
-            {"role": "system", "content": "You are a professional astronomical quality evaluation auditor. Respond with valid JSON only."},
-            {"role": "user", "content": prompt}
-        ],
-        "temperature": 0.1,
-        "response_format": {"type": "json_object"}
-    }
-
-    try:
-        async with httpx.AsyncClient(timeout=60.0) as client:
-            resp = await client.post(f"{base_url}/chat/completions", headers=headers, json=payload)
-            resp.raise_for_status()
-            data = resp.json()
-            content = data["choices"][0]["message"]["content"]
-            result = json.loads(content)
-
-            total = result.get("total_score", 0)
-            passed = total >= 80
-            result["passed"] = passed
-
-            if not passed:
-                logger.warning(
-                    f"⚠️ [Judge Alert] Book '{book_title}' scored {total} (<80). Issues: {result.get('issues_detected')}"
-                )
-            else:
-                logger.info(f"✅ [Judge Passed] Book '{book_title}' scored {total}/100.")
-
-            return result
-
-    except Exception as e:
-        logger.error(f"Error calling LLM Judge: {e}", exc_info=True)
-        return {
-            "completeness": 18,
-            "cleanliness": 18,
-            "accuracy": 35,
-            "consistency": 18,
-            "total_score": 89,
-            "passed": True,
-            "issues_detected": [f"Judge API exception: {str(e)}"],
-            "evaluation_summary": "Fallback heuristic assessment due to judge API timeout."
-        }

@@ -5,6 +5,8 @@ __pycache__/
 data/
 data_old/
 lightrag_workspace/
+lightrag_workspace_lancedb/
+lightrag_workspace_pilot/
 lightrag_workspace_old_1536/
 logs/
 *.log

@@ -8,6 +8,7 @@ token_tracker.py
 When token usage reaches 90% of the 5-hour quota, the pipeline pauses
 and waits until the next window reset, preventing total token exhaustion.
 """
+import sys
 import time
 import json
 import logging
@@ -80,6 +81,7 @@ class TokenTracker:
         self._window_start = 0.0
         self._window_tokens = 0
         self._monthly_tokens = 0
+        self._resume_event = None
         self._load()
 
     def add_usage(self, tokens: Union[int, Dict[str, Any]]) -> bool:
@@ -112,16 +114,24 @@ class TokenTracker:
         """Manually mark the window limit as reached (e.g. if API returns 402)."""
         with self._lock:
             self._reset_if_window_expired()
+            now = time.time()
+            # If within 120s of window start and usage is tiny, avoid locking out the entire 5h window
+            if (now - self._window_start) < 120 and self._window_tokens < 100_000:
+                logger.warning(
+                    "⚠️ [TokenTracker] mark_limit_reached requested within 120s of window start. "
+                    "Skipping lock-out to prevent false 5h pause from clock skew."
+                )
+                return
             if self._window_tokens < self.soft_limit:
                 self._window_tokens = self.soft_limit
             self._save()
 
-    def time_until_reset(self) -> int:
-        """Seconds remaining until the next 5-hour clock reset."""
+    def time_until_reset(self, buffer_seconds: int = 15) -> int:
+        """Seconds remaining until the next 5-hour clock reset (plus safety buffer)."""
         with self._lock:
             now = time.time()
             _, end_ts = get_window_bounds(now)
-            return max(0, int(end_ts - now))
+            return max(0, int(end_ts - now + buffer_seconds))
 
     def reset_window(self):
         """Force reset the window counter to 0."""
@@ -131,6 +141,11 @@ class TokenTracker:
             self._window_start = start_ts
             self._window_tokens = 0
             self._save()
+
+    def reset_window_if_expired(self):
+        """Check if current 5-hour window has expired and reset tokens if needed."""
+        with self._lock:
+            self._reset_if_window_expired()
 
     def usage_summary(self) -> Dict[str, Any]:
         """Returns full snapshot of current window and monthly usage."""
@@ -156,53 +171,120 @@ class TokenTracker:
                 "monthly_pct": round(pct_monthly, 2),
             }
 
-    async def wait_if_limit_reached(self, heartbeat_interval: int = 60):
+    async def probe_api_availability(self) -> bool:
+        """
+        Actively probes if the LLM API endpoint is available and accepting requests.
+        Returns True if successful, False if rate-limited or unavailable.
+        """
+        try:
+            import os
+            import httpx
+            api_key = os.getenv("LLM_API_KEY")
+            base_url = os.getenv("LLM_BASE_URL", "https://api.minimaxi.com/v1")
+            model = os.getenv("LLM_MODEL", "MiniMax-M3.1-Flash")
+            reasoning_effort = os.getenv("LLM_REASONING_EFFORT", "low")
+            if not api_key:
+                return False
+
+            headers = {
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json"
+            }
+            payload = {
+                "model": model,
+                "messages": [{"role": "user", "content": "ping"}],
+                "max_tokens": 1,
+                "reasoning_effort": reasoning_effort
+            }
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                resp = await client.post(f"{base_url}/chat/completions", headers=headers, json=payload)
+                return resp.status_code == 200
+        except Exception:
+            return False
+
+    async def wait_if_limit_reached(self, heartbeat_interval: int = 300, enable_probe: bool = True):
         """
         Asynchronously checks if 90% limit is reached. If so, pauses execution
         until the 5-hour window reset boundary + 15 seconds buffer.
-        Periodically logs heartbeat status every `heartbeat_interval` seconds
-        so logs never stay silent during the pause.
+        Uses an asyncio.Event so multiple concurrent coroutines don't wake up redundantly,
+        and logs a single heartbeat every `heartbeat_interval` seconds (default 300s = 5m).
+        Actively probes API recovery so transient rate limits resume in minutes rather than hours.
         """
-        first_warn = True
-        while self.is_limit_reached():
+        if not self.is_limit_reached():
+            return
+
+        with self._lock:
+            if self._resume_event is None:
+                self._resume_event = asyncio.Event()
+                self._resume_event.set()
+
+        # If another coroutine is already coordinating the pause, simply wait for resume (0% CPU)
+        if not self._resume_event.is_set():
+            await self._resume_event.wait()
+            return
+
+        # First coroutine to detect limit takes the coordinator role
+        self._resume_event.clear()
+
+        try:
             summary = self.usage_summary()
-            remaining_secs = summary["seconds_until_reset"]
-            if remaining_secs <= 0:
-                self.reset_window()
-                break
+            rem_m = summary["seconds_until_reset"] / 60
+            rem_h = summary["seconds_until_reset"] / 3600
+            logger.warning("=" * 65)
+            logger.warning(
+                f"⏸️ [TokenTracker] 90% Window Limit Reached! "
+                f"Usage: {summary['window_tokens']:,} / {summary['window_quota']:,} "
+                f"({summary['window_pct']:.1f}% >= {self.limit_ratio*100:.0f}%)"
+            )
+            logger.warning(
+                f"⏸️ Pausing pipeline until {summary['resume_time']} "
+                f"(remaining {rem_m:.1f}m ≈ {rem_h:.2f}h to avoid token exhaustion)..."
+            )
+            logger.warning("=" * 65)
 
-            remaining_min = remaining_secs / 60
-            remaining_hours = remaining_secs / 3600
+            if sys.platform == "win32":
+                try:
+                    import ctypes
+                    ctypes.windll.kernel32.SetThreadExecutionState(0x80000001 | 0x00000040)
+                except Exception:
+                    pass
 
-            if first_warn:
-                logger.warning("=" * 65)
-                logger.warning(
-                    f"⏸️ [TokenTracker] 90% Window Limit Reached! "
-                    f"Usage: {summary['window_tokens']:,} / {summary['window_quota']:,} "
-                    f"({summary['window_pct']:.1f}% >= {self.limit_ratio*100:.0f}%)"
-                )
-                logger.warning(
-                    f"⏸️ Pausing pipeline until {summary['resume_time']} "
-                    f"(remaining {remaining_min:.1f}m ≈ {remaining_hours:.2f}h to avoid token exhaustion)..."
-                )
-                logger.warning("=" * 65)
-                first_warn = False
-            else:
+            probe_counter = 0
+            while True:
+                now = time.time()
+                _, end_ts = get_window_bounds(now)
+                if now >= (end_ts + 10.0):
+                    break
+
+                # Sleep in chunks of 5 minutes or remainder
+                remaining_secs = max(1, int(end_ts - now + 15))
+                sleep_chunk = min(heartbeat_interval, remaining_secs)
+                await asyncio.sleep(sleep_chunk)
+
+                now = time.time()
+                if now >= (end_ts + 10.0):
+                    break
+
+                rem_min = (end_ts - now + 15) / 60
                 logger.info(
-                    f"⏳ [TokenTracker Heartbeat] Paused. Window: {summary['window_pct']:.1f}% "
-                    f"({summary['window_tokens']:,}/{summary['window_quota']:,}), "
-                    f"Resumes at {summary['resume_time']} (remaining: {remaining_min:.1f}m). "
-                    f"Pipeline is alive and waiting."
+                    f"⏳ [TokenTracker Heartbeat] Paused. Resumes at {summary['resume_time']} "
+                    f"({rem_min:.0f} minutes remaining). Sleeping peacefully."
                 )
 
-            step_sleep = min(heartbeat_interval, max(1, remaining_secs))
-            await asyncio.sleep(step_sleep)
+                # Active Probe: test if cloud provider restored early or if 402 was transient
+                probe_counter += 1
+                if enable_probe and probe_counter >= 1:
+                    is_online = await self.probe_api_availability()
+                    if is_online:
+                        logger.info("⚡ [TokenTracker Prober] API probe succeeded! Provider is accepting calls. Resuming pipeline early!")
+                        break
 
-        if not first_warn:
             self.reset_window()
             logger.info("=" * 65)
-            logger.info("▶️ [TokenTracker] 5-hour window reset! Resuming pipeline.")
+            logger.info("▶️ [TokenTracker] Pipeline resumed! Proceeding with extraction.")
             logger.info("=" * 65)
+        finally:
+            self._resume_event.set()
 
 
     def _reset_if_window_expired(self):

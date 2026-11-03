@@ -32,7 +32,9 @@ if str(PROJECT_ROOT.parent) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT.parent))
 
 try:
-    from harness_astronomy_knowledge_lightrag.src.astronomy_lightrag.config import LIGHTRAG_WORKSPACE, DEFAULT_LLM_TIMEOUT
+    from harness_astronomy_knowledge_lightrag.src.astronomy_lightrag.config import (
+        LIGHTRAG_WORKSPACE, DEFAULT_LLM_TIMEOUT, TOKEN_QUOTA_PER_WINDOW, TOKEN_LIMIT_RATIO
+    )
     from harness_astronomy_knowledge_lightrag.src.astronomy_lightrag.llm import get_minimax_llm_func, get_minimax_embedding_func
     from harness_astronomy_knowledge_lightrag.src.astronomy_lightrag.token_tracker import get_token_tracker
     from harness_astronomy_knowledge_lightrag.src.astronomy_lightrag.query_preprocessor import install_exact_match_hook, preprocess_astronomy_query
@@ -41,6 +43,8 @@ except (ImportError, ModuleNotFoundError):
     _cfg = importlib.import_module("astronomy_lightrag.config")
     LIGHTRAG_WORKSPACE = _cfg.LIGHTRAG_WORKSPACE
     DEFAULT_LLM_TIMEOUT = _cfg.DEFAULT_LLM_TIMEOUT
+    TOKEN_QUOTA_PER_WINDOW = getattr(_cfg, "TOKEN_QUOTA_PER_WINDOW", 7000000)
+    TOKEN_LIMIT_RATIO = getattr(_cfg, "TOKEN_LIMIT_RATIO", 0.90)
     _llm = importlib.import_module("astronomy_lightrag.llm")
     get_minimax_llm_func = _llm.get_minimax_llm_func
     get_minimax_embedding_func = _llm.get_minimax_embedding_func
@@ -56,17 +60,22 @@ DASHBOARD_PASSWORD = os.getenv("DASHBOARD_PASSWORD", "").strip()
 
 DATA_DIR = PROJECT_ROOT / "data"
 LOGS_DIR = PROJECT_ROOT / "logs"
-WORKSPACE_DIR = PROJECT_ROOT / "lightrag_workspace"
+WORKSPACE_DIR = LIGHTRAG_WORKSPACE
 PARENT_DIR = PROJECT_ROOT.parent
 BILINGUAL_OUTPUT_DIR = PARENT_DIR / "bilingual_output"
 
 app = Flask(__name__)
 
-# Target POC books
-TARGET_BOOKS = [
-    "book_066",
-    "book_142"
-]
+def _get_target_books():
+    try:
+        from astronomy_lightrag.doc_registry import get_book_registry
+        reg = get_book_registry()
+        nums = sorted([int(k.replace("book_", "")) for k in reg.keys() if k.replace("book_", "").isdigit()])
+        return [f"book_{n}" for n in nums]
+    except Exception:
+        return [f"book_{i}" for i in range(1, 101)]
+
+TARGET_BOOKS = _get_target_books()
 
 DOC_ID_MAP = {
     "book_066": "book_066",
@@ -75,8 +84,18 @@ DOC_ID_MAP = {
 
 BOOK_TO_DOC_ID = {v: k for k, v in DOC_ID_MAP.items()}
 
-WINDOW_QUOTA = 5_400_000
-WINDOW_SOFT_LIMIT = 4_860_000
+def get_window_quota_and_soft_limit():
+    try:
+        from astronomy_lightrag.config import TOKEN_QUOTA_PER_WINDOW as CFG_QUOTA, TOKEN_LIMIT_RATIO as CFG_RATIO
+        quota = int(os.getenv("TOKEN_QUOTA_PER_WINDOW", CFG_QUOTA))
+        ratio = float(os.getenv("TOKEN_LIMIT_RATIO", CFG_RATIO))
+    except Exception:
+        quota = int(os.getenv("TOKEN_QUOTA_PER_WINDOW", TOKEN_QUOTA_PER_WINDOW))
+        ratio = float(os.getenv("TOKEN_LIMIT_RATIO", TOKEN_LIMIT_RATIO))
+    return quota, int(quota * ratio)
+
+WINDOW_QUOTA, WINDOW_SOFT_LIMIT = get_window_quota_and_soft_limit()
+# dynamic quota
 WINDOW_DURATION = 18_000  # 5 hours in seconds
 
 
@@ -90,6 +109,20 @@ def get_latest_log_path():
         reverse=True
     )
     return log_files[0] if log_files else None
+
+
+def _read_log_tail(log_path: Path, max_bytes: int = 5242880) -> str:
+    """Reads only the last `max_bytes` (default 5MB) of a log file to avoid multi-MB full-file scans."""
+    with open(log_path, "rb") as f:
+        f.seek(0, os.SEEK_END)
+        size = f.tell()
+        f.seek(max(0, size - max_bytes), os.SEEK_SET)
+        data = f.read()
+    text = data.decode("utf-8", errors="ignore")
+    # Drop partial first line if we seeked into the middle
+    if size > max_bytes and "\n" in text:
+        text = text.split("\n", 1)[1]
+    return text
 
 
 def parse_log_stats(log_path):
@@ -111,24 +144,26 @@ def parse_log_stats(log_path):
         return stats
 
     try:
-        # Read the file
-        content = log_path.read_text(encoding="utf-8", errors="ignore")
+        # Read tail (up to 5MB) so that active book markers are retained even after multi-hour heartbeat pauses
+        content = _read_log_tail(log_path, max_bytes=5242880)
+        # Scope to the latest book being processed if marker is present in tail
+        book_split = re.split(r"Processing [Bb]ook \d+/\d+", content)
+        active_section = book_split[-1] if len(book_split) > 1 else content
+
         lines = content.splitlines()
         if lines:
             stats["last_log_line"] = lines[-1]
 
         # Check for waiting status
-        wait_matches = re.findall(r"remaining ([\d\.]+)m", content)
-        if wait_matches:
-            # Check if this wait happened recently in the last 20 lines
-            recent_text = "\n".join(lines[-25:])
-            if "Pausing pipeline until" in recent_text:
+        recent_text_25 = "\n".join(lines[-25:])
+        if "Pausing pipeline until" in recent_text_25 or "[TokenTracker Heartbeat] Paused." in recent_text_25:
+            wait_matches = re.findall(r"remaining:? ([\d\.]+)m", recent_text_25)
+            if wait_matches:
                 stats["is_waiting_reset"] = True
                 stats["wait_remaining_sec"] = float(wait_matches[-1]) * 60
 
-        # Check chunk extraction matches with doc_id
-        # Format: Chunk 448 of 608 extracted 17 Ent + 16 Rel doc-xxxx-chunk-yyy
-        chunk_matches = re.findall(r"Chunk (\d+) of (\d+) extracted (\d+) Ent \+ (\d+) Rel (doc-[a-f0-9]+)", content)
+        # Check chunk extraction matches with doc_id within the active book section
+        chunk_matches = re.findall(r"Chunk (\d+) of (\d+) extracted (\d+) Ent \+ (\d+) Rel (doc-[a-f0-9]+)", active_section)
         if chunk_matches:
             stats["total_ent"] = sum(int(m[2]) for m in chunk_matches)
             stats["total_rel"] = sum(int(m[3]) for m in chunk_matches)
@@ -141,22 +176,29 @@ def parse_log_stats(log_path):
             if last_doc_id in DOC_ID_MAP:
                 stats["active_book_name"] = DOC_ID_MAP[last_doc_id]
         else:
-            # Fallback format without doc_id
-            simple_matches = re.findall(r"Chunk (\d+) of (\d+) extracted (\d+) Ent \+ (\d+) Rel", content)
+            simple_matches = re.findall(r"Chunk (\d+) of (\d+) extracted (\d+) Ent \+ (\d+) Rel", active_section)
             if simple_matches:
                 last_m = simple_matches[-1]
                 stats["active_chunk"] = int(last_m[0])
                 stats["total_chunks"] = int(last_m[1])
+            else:
+                # Fallback when only astronomy_lightrag.llm logs are in the log file (2 LLM calls per chunk: extract + glean)
+                est_m = re.search(r"~(\d+) chunks", active_section)
+                if est_m:
+                    stats["total_chunks"] = max(1, int(int(est_m.group(1)) * 0.30))
+                llm_resps = len(re.findall(r"Response received in [\d\.]+s", active_section))
+                if llm_resps > 0:
+                    stats["active_chunk"] = min(stats["total_chunks"] or 999, max(1, llm_resps // 2))
 
         # Track Stage 2.5: Entity & Relation Summarization / Merging (LLMmrg)
-        mrg_matches = re.findall(r"LLMmrg: `([^`]+)` \| (\d+)\+(\d+)", content)
+        mrg_matches = re.findall(r"LLMmrg: `([^`]+)` \| (\d+)\+(\d+)", active_section)
         stats["merged_entities_count"] = len(mrg_matches)
         stats["last_merged_entity"] = mrg_matches[-1][0] if mrg_matches else ""
 
         recent_text = "\n".join(lines[-150:]) if lines else ""
-        if "🚀 [Embedding] Vectorizing" in recent_text or ("[Embedding]" in recent_text and "MiniMax RPM" in recent_text):
+        if "entities flush: embedding" in recent_text or "relationships flush: embedding" in recent_text:
             stats["stage_code"] = "embedding"
-            stats["stage_label"] = "阶段 3/3: 向量嵌入落盘 (embo-01 向量写入)"
+            stats["stage_label"] = "阶段 3/3: 向量嵌入落盘 (512维本地向量写入)"
         elif stats["active_chunk"] >= stats["total_chunks"] and stats["total_chunks"] > 0:
             stats["stage_code"] = "merging"
             mrg_c = stats.get("merged_entities_count", 0)
@@ -167,7 +209,7 @@ def parse_log_stats(log_path):
 
         # Calculate average chunk speed from timestamps of the last 15 chunk extractions
         ts_pattern = re.compile(r"(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}).*?Chunk \d+ of \d+ extracted")
-        ts_matches = ts_pattern.findall(content)
+        ts_matches = ts_pattern.findall(active_section)
         if len(ts_matches) >= 2:
             recent_ts = ts_matches[-15:]
             try:
@@ -179,11 +221,11 @@ def parse_log_stats(log_path):
             except Exception:
                 pass
 
-        # Check active book name from log if not determined by doc_id
-        if not chunk_matches:
-            book_matches = re.findall(r"(?:INGESTING.*?:\s*|Processing book \d+/\d+:\s*)(book_[^\r\n\\\/]+)", content)
-            if book_matches:
-                stats["active_book_name"] = book_matches[-1].strip()
+        # Check active book name from log
+        book_matches = re.findall(r"(?:INGESTING.*?:\s*|Processing [Bb]ook \d+/\d+\]?:?\s*)(book_\d+)", content)
+        if book_matches:
+            m_b = re.match(r"^book_0*(\d+)$", book_matches[-1].strip())
+            stats["active_book_name"] = f"book_{m_b.group(1)}" if m_b else book_matches[-1].strip()
 
     except Exception as e:
         stats["error"] = str(e)
@@ -238,19 +280,25 @@ def get_token_state():
     now = time.time()
     start_ts, end_ts, slot_label, slot_hours = get_window_bounds(now)
     seconds_left = max(0, int(end_ts - now))
+    window_quota, window_soft_limit = get_window_quota_and_soft_limit()
 
     state = {
         "window_tokens": 0,
         "window_start": start_ts,
         "monthly_tokens": 0,
-        "window_quota": WINDOW_QUOTA,
-        "window_soft_limit": WINDOW_SOFT_LIMIT,
+        "cumulative_tokens": 0,
+        "cumulative_tokens_formatted": "0",
+        "cumulative_tokens_m": "0.00M",
+        "window_quota": window_quota,
+        "window_soft_limit": window_soft_limit,
         "window_pct": 0.0,
         "seconds_until_reset": seconds_left,
         "reset_time_str": datetime.fromtimestamp(end_ts).strftime("%Y-%m-%d %H:%M:%S"),
         "slot_label": slot_label,
         "slot_hours": slot_hours,
         "is_limit_reached": False,
+        "monthly_quota": 600_000_000,
+        "monthly_pct": 0.0,
     }
     token_file = DATA_DIR / "token_tracker_state.json"
     if token_file.exists():
@@ -262,12 +310,17 @@ def get_token_state():
                 state["window_tokens"] = data.get("window_tokens", 0)
             else:
                 state["window_tokens"] = 0
-            state["monthly_tokens"] = data.get("monthly_tokens", 0)
+            cum_tok = data.get("monthly_tokens", 0)
+            state["monthly_tokens"] = cum_tok
+            state["cumulative_tokens"] = cum_tok
+            state["cumulative_tokens_formatted"] = f"{cum_tok:,}"
+            state["cumulative_tokens_m"] = f"{cum_tok / 1_000_000:.2f}M"
+            state["monthly_pct"] = round(cum_tok / 600_000_000 * 100, 2)
         except Exception:
             pass
 
-    state["window_pct"] = round(state["window_tokens"] / WINDOW_SOFT_LIMIT * 100, 2)
-    state["is_limit_reached"] = state["window_tokens"] >= WINDOW_SOFT_LIMIT
+    state["window_pct"] = round(state["window_tokens"] / window_soft_limit * 100, 2)
+    state["is_limit_reached"] = state["window_tokens"] >= window_soft_limit
     return state
 
 
@@ -320,6 +373,15 @@ def get_dashboard_state():
         except Exception:
             pass
 
+    # Read Chunk Checkpoint storage
+    checkpoint_books = {}
+    checkpoint_file = DATA_DIR / "chunk_checkpoint_state.json"
+    if checkpoint_file.exists():
+        try:
+            checkpoint_books = json.loads(checkpoint_file.read_text(encoding="utf-8")).get("books", {})
+        except Exception:
+            pass
+
     # Read LightRAG native doc_status storage
     doc_status_map = {}
     doc_status_file = WORKSPACE_DIR / "kv_store_doc_status.json"
@@ -349,19 +411,51 @@ def get_dashboard_state():
             display_books.append(b)
 
     for idx, book_name in enumerate(display_books, 1):
-        clean_title = book_reg.get(book_name, {}).get("title") or book_name.replace("book_", "")
-        doc_id = BOOK_TO_DOC_ID.get(book_name, book_name)
-        doc_info = doc_status_map.get(doc_id, {})
-        is_processed = (doc_info.get("status") == "processed")
         info = {}
+        is_processed = False
         for c_key, c_val in completed_books.items():
             if book_name in c_key:
                 is_processed = True
                 info = c_val
                 break
 
+        doc_id = info.get("doc_id")
+        if not doc_id:
+            import re
+            m = re.match(r"^book_(\d+)$", book_name)
+            if m:
+                doc_id = f"book_{int(m.group(1)):03d}"
+            else:
+                doc_id = BOOK_TO_DOC_ID.get(book_name, book_name)
+
+        doc_info = doc_status_map.get(doc_id, {})
+        if doc_info.get("status") == "processed":
+            is_processed = True
+
+        # Check if completed in checkpoint manager
+        cp_entry = checkpoint_books.get(doc_id) or checkpoint_books.get(book_name, {})
+        if cp_entry.get("status") == "completed":
+            is_processed = True
+            if not info:
+                info = {
+                    "doc_id": doc_id,
+                    "chunks_count": cp_entry.get("completed_chunks", 0),
+                    "entities_count": "已归档",
+                    "relations_count": "已归档"
+                }
+
+        raw_title = info.get("title") or book_reg.get(doc_id, {}).get("title") or book_name.replace("book_", "").split("\\")[0]
+        
+        # Standardize to {number}.{Title}
+        book_num_str = book_name.replace("book_", "").split("\\")[0]
+        if book_num_str.isdigit():
+            # e.g., "1.The ShortTube 80 Telescope"
+            clean_title = f"{int(book_num_str)}.{raw_title.replace('《', '').replace('》', '')}"
+        else:
+            clean_title = raw_title.replace('《', '').replace('》', '')
+
         if is_processed:
-            est_chunks = book_reg.get(book_name, {}).get("estimated_chunks", 0)
+            est_chunks = book_reg.get(doc_id, {}).get("estimated_chunks", 0)
             if not est_chunks:
                 for v in book_reg.values():
                     if v.get("title") == clean_title:
@@ -423,7 +517,7 @@ def get_dashboard_state():
                 "stage_label": log_stats.get("stage_label", "")
             })
         else:
-            est_chunks = book_reg.get(book_name, {}).get("estimated_chunks", 0)
+            est_chunks = book_reg.get(doc_id, {}).get("estimated_chunks") or book_reg.get(book_name, {}).get("estimated_chunks", 0)
             poc_books.append({
                 "index": idx,
                 "id": book_name,
@@ -438,7 +532,45 @@ def get_dashboard_state():
 
     # POC overall calculations
     completed_count = len([b for b in poc_books if b["status"] == "completed"])
-    poc_pct = round(sum(b["progress_pct"] for b in poc_books) / len(TARGET_BOOKS), 1)
+    poc_pct = round(sum(b["progress_pct"] for b in poc_books) / len(display_books), 1)
+
+    # Token calculations across completed chunks & books
+    cum_tok = token_state.get("cumulative_tokens", 0)
+    total_completed_chunks = sum(
+        b.get("chunks_done", 0) for b in poc_books if b.get("status") == "completed" and isinstance(b.get("chunks_done"), (int, float))
+    )
+    avg_tok_per_chunk = (cum_tok / max(1, total_completed_chunks)) if total_completed_chunks > 0 else 4641
+    avg_tok_per_book = (cum_tok / max(1, completed_count)) if completed_count > 0 else 3_780_000
+
+    token_state["avg_tokens_per_book"] = round(avg_tok_per_book)
+    token_state["avg_tokens_per_book_formatted"] = f"{avg_tok_per_book / 1_000_000:.2f}M"
+    token_state["avg_tokens_per_chunk"] = round(avg_tok_per_chunk)
+    token_state["total_completed_chunks"] = total_completed_chunks
+
+    for b in poc_books:
+        if b["status"] == "completed":
+            c_done = b.get("chunks_done") or 0
+            if isinstance(c_done, (int, float)) and c_done > 0:
+                t_est = int(c_done * avg_tok_per_chunk)
+                b["tokens_consumed"] = t_est
+                b["tokens_formatted"] = f"~{t_est / 1_000_000:.2f}M"
+            else:
+                b["tokens_consumed"] = int(avg_tok_per_book)
+                b["tokens_formatted"] = f"~{avg_tok_per_book / 1_000_000:.2f}M"
+        elif b["status"] in ("processing", "paused_quota", "merging", "embedding"):
+            c_done = b.get("chunks_done") or 0
+            t_est = int(c_done * avg_tok_per_chunk) if isinstance(c_done, (int, float)) else 0
+            b["tokens_consumed"] = t_est
+            b["tokens_formatted"] = f"~{t_est / 1_000_000:.2f}M"
+        else:  # queued
+            c_tot = b.get("chunks_total") or 0
+            if isinstance(c_tot, (int, float)) and c_tot > 0:
+                t_est = int(c_tot * avg_tok_per_chunk)
+                b["tokens_consumed"] = t_est
+                b["tokens_formatted"] = f"预估 ~{t_est / 1_000_000:.2f}M"
+            else:
+                b["tokens_consumed"] = int(avg_tok_per_book)
+                b["tokens_formatted"] = f"预估 ~{avg_tok_per_book / 1_000_000:.2f}M"
 
     # Calculate remaining time for active book
     remaining_chunks = max(0, log_stats["total_chunks"] - log_stats["active_chunk"])
@@ -448,20 +580,45 @@ def get_dashboard_state():
     all_books = get_all_books_corpus()
     total_corpus_books = len(all_books) if all_books else 154
 
-    # Full corpus estimate:
-    # Average chunks per book ~ 500
-    # Average LLM extraction tokens per book ~ 1,100,000 tokens
-    # With 5.4M tokens per 5-hour window: ~4.5 books per 5-hour quota window
-    # Days needed = (total_corpus_books / 4.5) * (5 / 24) days
-    est_poc_days = round(5 / 1.5, 1) # ~2.5 to 3 days depending on quota pauses
-    est_full_corpus_days = round((total_corpus_books * 1.1) / (5.4 * 4.8 / 1.0) * 1.2, 1) # ~25 - 35 days
+    # Full corpus estimate based on actual empirical measurements (16+ books):
+    # - Actual LLM tokens per book (Stage 1 extract + Stage 2 merge): ~3.7M tokens/book
+    # - Daily token budget (5 windows/day * 4.86M~4.90M 90% soft limit): ~24.5M tokens/day
+    # - Effective throughput (including 5h quota pauses): ~6.86 books/day (~3.5 hours/book)
+    avg_hours_per_book = 3.5
+    remaining_poc_books = max(0, len(display_books) - completed_count)
+    est_poc_days = round((remaining_poc_books * avg_hours_per_book) / 24.0, 1)
+    est_full_corpus_days = round((total_corpus_books * avg_hours_per_book) / 24.0, 1)
+    remaining_corpus_books = max(0, total_corpus_books - completed_count)
+    remaining_full_corpus_days = round((remaining_corpus_books * avg_hours_per_book) / 24.0, 1)
+
+    total_est_tokens = total_corpus_books * avg_tok_per_book
+    remaining_est_tokens = remaining_corpus_books * avg_tok_per_book
+
+    active_book_id = log_stats["active_book_name"]
+    raw_active_title = book_reg.get(active_book_id, {}).get("title") or active_book_id.replace("book_", "").split("\\")[0]
+    
+    # Check if doc_id was used, or raw folder name
+    # We want to standardize active title to {num}.{title}
+    m_active = re.match(r"^book_(\d+)$", active_book_id)
+    if not m_active:
+        # maybe it's book_001
+        m_active = re.match(r"^book_(\d{3})$", active_book_id)
+        
+    if m_active:
+        num = int(m_active.group(1))
+        # use registry title to be safe
+        safe_doc_id = f"book_{num:03d}"
+        raw_active_title = book_reg.get(safe_doc_id, {}).get("title") or raw_active_title
+        active_display_title = f"{num}.{raw_active_title.replace('《', '').replace('》', '')}"
+    else:
+        active_display_title = raw_active_title.replace('《', '').replace('》', '')
 
     return {
         "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         "token": token_state,
         "active_book": {
-            "name": book_reg.get(log_stats["active_book_name"], {}).get("title") or log_stats["active_book_name"].replace("book_", ""),
-            "full_id": log_stats["active_book_name"],
+            "name": active_display_title,
+            "full_id": active_book_id,
             "chunk_done": log_stats["active_chunk"],
             "chunk_total": log_stats["total_chunks"],
             "chunk_pct": round(log_stats["active_chunk"] / max(1, log_stats["total_chunks"]) * 100, 1),
@@ -488,14 +645,24 @@ def get_dashboard_state():
         },
         "poc": {
             "completed_books": completed_count,
-            "total_books": len(TARGET_BOOKS),
+            "total_books": len(display_books),
             "progress_pct": poc_pct,
             "books": poc_books,
             "est_days": est_poc_days
         },
         "full_corpus": {
             "total_books": total_corpus_books,
-            "est_days": est_full_corpus_days
+            "avg_hours_per_book": avg_hours_per_book,
+            "est_days": est_full_corpus_days,
+            "remaining_books": remaining_corpus_books,
+            "remaining_days": remaining_full_corpus_days,
+            "total_tokens_consumed": cum_tok,
+            "total_tokens_consumed_formatted": f"{cum_tok:,}",
+            "total_tokens_consumed_m": f"{cum_tok / 1_000_000:.2f}M",
+            "total_est_tokens_m": f"{total_est_tokens / 1_000_000:.1f}M",
+            "remaining_est_tokens_m": f"{remaining_est_tokens / 1_000_000:.1f}M",
+            "avg_tokens_per_book_m": f"{avg_tok_per_book / 1_000_000:.2f}M",
+            "monthly_util_pct": round(cum_tok / 600_000_000 * 100, 1),
         },
         "system": {
             "status": "paused_quota" if (log_stats["is_waiting_reset"] or token_state["is_limit_reached"]) else "running",
@@ -586,9 +753,24 @@ def index():
     return send_from_directory(Path(__file__).parent, "index.html")
 
 
+_state_cache = {"ts": 0.0, "data": None}
+_state_cache_lock = threading.Lock()
+
+
+def get_cached_dashboard_state(ttl: float = 1.5):
+    now = time.time()
+    with _state_cache_lock:
+        if _state_cache["data"] is not None and (now - _state_cache["ts"]) < ttl:
+            return _state_cache["data"]
+        data = get_dashboard_state()
+        _state_cache["ts"] = now
+        _state_cache["data"] = data
+        return data
+
+
 @app.route("/api/state")
 def api_state():
-    return jsonify(get_dashboard_state())
+    return jsonify(get_cached_dashboard_state())
 
 
 @app.route("/api/logs")
@@ -598,7 +780,7 @@ def api_logs():
     if not log_path or not log_path.exists():
         return jsonify({"lines": [], "filename": ""})
     try:
-        content = log_path.read_text(encoding="utf-8", errors="ignore")
+        content = _read_log_tail(log_path, max_bytes=131072)
         lines = content.splitlines()[-tail:]
         return jsonify({"lines": lines, "filename": log_path.name, "total_lines": len(lines)})
     except Exception as e:
@@ -607,28 +789,34 @@ def api_logs():
 
 @app.route("/stream")
 def sse_stream():
-    """SSE endpoint: Pushes JSON state and new log lines every 1.5s."""
+    """SSE endpoint: Pushes JSON state and new log lines every 2.0s using O(1) byte-offset seeking."""
     def event_stream():
         yield "data: {\"type\": \"ping\"}\n\n"
-        last_log_line_count = 0
-        log_path = get_latest_log_path()
+        last_offset = 0
+        last_log_path = None
 
         while True:
             try:
-                state = get_dashboard_state()
-                # Also check new log lines
+                state = get_cached_dashboard_state(ttl=1.8)
                 new_lines = []
                 current_log = get_latest_log_path()
                 if current_log and current_log.exists():
                     try:
-                        content = current_log.read_text(encoding="utf-8", errors="ignore")
-                        all_lines = content.splitlines()
-                        if last_log_line_count == 0:
-                            # Send initial tail
-                            new_lines = all_lines[-60:]
-                        elif len(all_lines) > last_log_line_count:
-                            new_lines = all_lines[last_log_line_count:]
-                        last_log_line_count = len(all_lines)
+                        if last_log_path != current_log:
+                            last_log_path = current_log
+                            last_offset = 0
+
+                        size = current_log.stat().st_size
+                        if last_offset == 0:
+                            content = _read_log_tail(current_log, max_bytes=32768)
+                            new_lines = content.splitlines()[-60:]
+                            last_offset = size
+                        elif size > last_offset:
+                            with open(current_log, "rb") as f:
+                                f.seek(last_offset)
+                                delta = f.read(size - last_offset)
+                            last_offset = size
+                            new_lines = delta.decode("utf-8", errors="ignore").splitlines()
                     except Exception:
                         pass
 
@@ -641,7 +829,7 @@ def sse_stream():
             except Exception as e:
                 yield f"data: {json.dumps({'type': 'error', 'msg': str(e)})}\n\n"
 
-            time.sleep(1.5)
+            time.sleep(2.0)
 
     return Response(
         event_stream(),
@@ -667,6 +855,10 @@ def get_rag():
     global _rag_instance, _rag_loop, _rag_thread
     with _rag_lock:
         if _rag_instance is None:
+            from astronomy_lightrag.config import STORAGE_BACKEND
+            if STORAGE_BACKEND == "lancedb":
+                from astronomy_lightrag.storage import init_astronomy_storage_backends
+                init_astronomy_storage_backends()
             from lightrag import LightRAG
 
             install_exact_match_hook()
@@ -678,13 +870,28 @@ def get_rag():
             tracker = get_token_tracker()
 
             async def _init():
-                rag = LightRAG(
-                    working_dir=str(LIGHTRAG_WORKSPACE),
-                    llm_model_func=get_minimax_llm_func(tracker=tracker),
-                    embedding_func=get_minimax_embedding_func(tracker=tracker),
-                    default_llm_timeout=DEFAULT_LLM_TIMEOUT
-                )
-                await rag.initialize_storages()
+                from astronomy_lightrag.local_embedding import get_local_embedding_func
+                from lightrag.utils import EmbeddingFunc
+                from astronomy_lightrag.config import STORAGE_BACKEND
+
+                kwargs = {
+                    "working_dir": str(LIGHTRAG_WORKSPACE),
+                    "llm_model_func": get_minimax_llm_func(bypass_tracking=True),
+                    "embedding_func": EmbeddingFunc(
+                        embedding_dim=512,
+                        max_token_size=8192,
+                        func=get_local_embedding_func()
+                    ),
+                    "default_llm_timeout": DEFAULT_LLM_TIMEOUT
+                }
+                if STORAGE_BACKEND == "lancedb":
+                    from astronomy_lightrag.storage import init_astronomy_storage_backends
+                    init_astronomy_storage_backends()
+                    kwargs["kv_storage"] = "SQLiteKVStorage"
+                    kwargs["vector_storage"] = "LanceDBVectorStorage"
+                    kwargs["graph_storage"] = "SQLiteGraphStorage"
+
+                rag = LightRAG(**kwargs)
                 return rag
 
             fut = asyncio.run_coroutine_threadsafe(_init(), _rag_loop)

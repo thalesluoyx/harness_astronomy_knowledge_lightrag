@@ -42,7 +42,7 @@ def test_file_hash_computation(tmp_path):
     assert h1 != h2
 
 @pytest.mark.asyncio
-async def test_run_ingestion_pipeline_skips_processed(mock_bilingual_dir, mock_state_file, mock_rag):
+async def test_run_ingestion_pipeline_skips_processed(mock_bilingual_dir, mock_state_file, mock_rag, mock_tracker):
     """Verifies pipeline processes new files and skips previously processed ones."""
     target_books = ["book_Hidden Treasures (2007)", "book_Southern Gems (2013)"]
 
@@ -51,7 +51,8 @@ async def test_run_ingestion_pipeline_skips_processed(mock_bilingual_dir, mock_s
         rag_instance=mock_rag,
         base_dir=mock_bilingual_dir,
         state_file=mock_state_file,
-        target_books=target_books
+        target_books=target_books,
+        tracker=mock_tracker
     )
     assert mock_rag.ainsert.call_count == 2
     state = load_state(mock_state_file)
@@ -63,12 +64,13 @@ async def test_run_ingestion_pipeline_skips_processed(mock_bilingual_dir, mock_s
         rag_instance=mock_rag,
         base_dir=mock_bilingual_dir,
         state_file=mock_state_file,
-        target_books=target_books
+        target_books=target_books,
+        tracker=mock_tracker
     )
     assert mock_rag.ainsert.call_count == 0
 
 @pytest.mark.asyncio
-async def test_run_ingestion_pipeline_does_not_save_failed_docs(mock_bilingual_dir, mock_state_file, mock_rag):
+async def test_run_ingestion_pipeline_does_not_save_failed_docs(mock_bilingual_dir, mock_state_file, mock_rag, mock_tracker):
     """Verifies that if a document has FAILED status, it is NOT marked in state."""
     target_books = ["book_Hidden Treasures (2007)"]
 
@@ -82,7 +84,8 @@ async def test_run_ingestion_pipeline_does_not_save_failed_docs(mock_bilingual_d
         rag_instance=mock_rag,
         base_dir=mock_bilingual_dir,
         state_file=mock_state_file,
-        target_books=target_books
+        target_books=target_books,
+        tracker=mock_tracker
     )
 
     state = load_state(mock_state_file)

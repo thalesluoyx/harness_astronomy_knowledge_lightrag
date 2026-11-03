@@ -11,6 +11,7 @@ Functions:
 3. Automatically sleeps and resumes pipeline across natural day boundaries.
 4. Integrates with TokenTracker 90% threshold for self-healing quota management.
 """
+import sys
 import time
 import asyncio
 import logging
@@ -81,6 +82,12 @@ async def sleep_until_next_window(buffer_seconds: int = 15):
 
     # Sleep in 60s increments to allow logging and interrupt handling
     rem = secs
+    if sys.platform == "win32":
+        try:
+            import ctypes
+            ctypes.windll.kernel32.SetThreadExecutionState(0x80000001 | 0x00000040)
+        except Exception:
+            pass
     while rem > 0:
         sleep_chunk = min(rem, 60.0)
         await asyncio.sleep(sleep_chunk)

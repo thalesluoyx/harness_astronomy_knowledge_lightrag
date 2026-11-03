@@ -9,16 +9,40 @@ from openai import APIStatusError
 from lightrag.llm.openai import openai_complete_if_cache
 from lightrag.utils import EmbeddingFunc
 
-from .config import LLM_API_KEY, LLM_BASE_URL, LLM_MODEL, EMBEDDING_MODEL, EMBEDDING_DIM, EMBEDDING_ENGINE
+from .config import (
+    LLM_API_KEY,
+    LLM_BASE_URL,
+    LLM_MODEL,
+    LLM_REASONING_EFFORT,
+    EMBEDDING_MODEL,
+    EMBEDDING_DIM,
+    EMBEDDING_ENGINE
+)
 from .token_tracker import get_token_tracker, TokenTracker
 
 logger = logging.getLogger("astronomy_lightrag.llm")
+
+def _extract_underlying_exception(exc: Exception) -> Exception:
+    """Extracts actual root cause from tenacity.RetryError or chained exceptions."""
+    if hasattr(exc, "last_attempt") and callable(getattr(exc.last_attempt, "exception", None)):
+        try:
+            inner = exc.last_attempt.exception()
+            if inner:
+                return inner
+        except Exception:
+            pass
+    if hasattr(exc, "__cause__") and exc.__cause__:
+        return exc.__cause__
+    return exc
+
 
 def get_minimax_llm_func(
     model: str = LLM_MODEL,
     api_key: str = LLM_API_KEY,
     base_url: str = LLM_BASE_URL,
-    tracker: Optional[TokenTracker] = None
+    tracker: Optional[TokenTracker] = None,
+    bypass_tracking: bool = False,
+    reasoning_effort: Optional[str] = LLM_REASONING_EFFORT
 ):
     """
     Creates an LLM model function for LightRAG with:
@@ -27,21 +51,29 @@ def get_minimax_llm_func(
     3. Live progress and token consumption logging.
     4. Automatic stripping of <think> reasoning tags.
     """
-    if tracker is None:
+    if tracker is None and not bypass_tracking:
         tracker = get_token_tracker()
 
     async def llm_func(prompt, system_prompt=None, history_messages=None, **kwargs):
         # 1. Check & wait if 90% window limit has been reached
-        await tracker.wait_if_limit_reached()
+        if tracker:
+            await tracker.wait_if_limit_reached(enable_probe=False)
 
-        summary = tracker.usage_summary()
-        logger.info(
-            f"⚡ [LLM] Calling {model} (prompt: {len(prompt)} chars) | "
-            f"5h Window: {summary['window_pct']}% ({summary['window_tokens']:,}/{summary['window_soft_limit']:,} tokens)"
-        )
+        summary = tracker.usage_summary() if tracker else "Tracking Bypassed"
+        if tracker:
+            logger.info(
+                f"⚡ [LLM] Calling {model} (prompt: {len(prompt)} chars) | "
+                f"5h Window: {summary['window_pct']}% ({summary['window_tokens']:,}/{summary['window_soft_limit']:,} tokens)"
+            )
+        else:
+            logger.info(f"⚡ [LLM] Calling {model} (prompt: {len(prompt)} chars) | {summary}")
 
         start_time = time.time()
-        max_retries = 3
+        max_retries = 6
+
+        call_kwargs = dict(kwargs)
+        if reasoning_effort and "reasoning_effort" not in call_kwargs:
+            call_kwargs["reasoning_effort"] = reasoning_effort
 
         for attempt in range(max_retries):
             try:
@@ -53,15 +85,18 @@ def get_minimax_llm_func(
                     api_key=api_key,
                     base_url=base_url,
                     token_tracker=tracker,
-                    **kwargs
+                    **call_kwargs
                 )
 
                 elapsed = time.time() - start_time
-                summary_after = tracker.usage_summary()
-                logger.info(
-                    f"✅ [LLM] Response received in {elapsed:.1f}s | "
-                    f"Current 5h usage: {summary_after['window_pct']}% ({summary_after['window_tokens']:,} tokens)"
-                )
+                if tracker:
+                    summary_after = tracker.usage_summary()
+                    logger.info(
+                        f"✅ [LLM] Response received in {elapsed:.1f}s | "
+                        f"Current 5h usage: {summary_after['window_pct']}% ({summary_after['window_tokens']:,} tokens)"
+                    )
+                else:
+                    logger.info(f"✅ [LLM] Response received in {elapsed:.1f}s | Tracking Bypassed")
 
                 # Clean <think> tags if present
                 if isinstance(result, str):
@@ -72,14 +107,33 @@ def get_minimax_llm_func(
             except APIStatusError as err:
                 is_402 = err.status_code == 402 or "insufficient_balance" in str(err)
                 is_422 = err.status_code == 422 or "sensitive" in str(err).lower() or "unprocessable_entity" in str(err).lower()
+                is_overloaded = (
+                    err.status_code in (429, 500, 502, 503, 504, 529)
+                    or "overloaded" in str(err).lower()
+                    or "rate" in str(err).lower()
+                    or "负载较高" in str(err)
+                )
 
                 if is_402:
+                    summary = tracker.usage_summary() if tracker else {}
+                    # If current window tokens < 100k and early attempt, likely clock skew near boundary.
+                    if summary.get("window_tokens", 0) < 100_000 and attempt < 2:
+                        logger.warning(
+                            f"⚠️ [TokenTracker] API returned 402 on attempt {attempt+1} with low window usage ({summary.get('window_tokens', 0)} tokens). "
+                            f"Backing off 30s for cloud provider clock alignment..."
+                        )
+                        await asyncio.sleep(30)
+                        continue
+
                     logger.warning(
                         f"⚠️ [TokenTracker] API returned 402 Insufficient Balance on attempt {attempt+1}! "
                         f"Marking 5h window full and pausing until next clock reset..."
                     )
-                    tracker.mark_limit_reached()
-                    await tracker.wait_if_limit_reached()
+                    if tracker:
+                        tracker.mark_limit_reached()
+                        await tracker.wait_if_limit_reached()
+                    else:
+                        await asyncio.sleep(300)
                     continue
                 elif is_422:
                     logger.warning(
@@ -91,14 +145,49 @@ def get_minimax_llm_func(
                     if "<|COMPLETE|>" in (system_prompt or "") or "<|#|>" in prompt or "<|COMPLETE|>" in prompt or "Entity Types" in prompt:
                         return "<|COMPLETE|>"
                     return "Astronomical object or concept described in catalog records."
+                elif is_overloaded:
+                    wait_time = min(60, 5 * (2 ** attempt))
+                    logger.warning(
+                        f"⚠️ [LLM] Upstream overloaded / rate limit ({err.status_code}): {err}. "
+                        f"Backing off for {wait_time}s on attempt {attempt+1}/{max_retries}..."
+                    )
+                    await asyncio.sleep(wait_time)
+                    continue
                 else:
                     logger.error(f"❌ [LLM] APIStatusError {err.status_code}: {err}", exc_info=True)
-                    raise
+                    if attempt == max_retries - 1:
+                        raise
+                    await asyncio.sleep(5)
 
             except Exception as e:
-                logger.error(f"❌ [LLM] Call error on attempt {attempt+1}: {e}", exc_info=True)
+                root_cause = _extract_underlying_exception(e)
+                err_str = f"{e} {root_cause}".lower()
+                is_status = isinstance(root_cause, APIStatusError)
+                status_code = getattr(root_cause, "status_code", None)
+
+                is_overloaded = (
+                    "529" in err_str
+                    or "overloaded" in err_str
+                    or "负载较高" in err_str
+                    or "503" in err_str
+                    or "502" in err_str
+                    or "429" in err_str
+                    or "rate" in err_str
+                    or (is_status and status_code in (429, 500, 502, 503, 504, 529))
+                )
+
+                if is_overloaded and attempt < max_retries - 1:
+                    wait_time = min(90, 10 * (attempt + 1))
+                    logger.warning(
+                        f"⚠️ [LLM] Upstream overload detected ({root_cause}): "
+                        f"Backing off for {wait_time}s on attempt {attempt+1}/{max_retries}..."
+                    )
+                    await asyncio.sleep(wait_time)
+                    continue
+
+                logger.error(f"❌ [LLM] Call error on attempt {attempt+1}: {root_cause}", exc_info=True)
                 if attempt == max_retries - 1:
-                    raise
+                    raise root_cause from e
                 await asyncio.sleep(2 ** attempt)
 
     return llm_func
