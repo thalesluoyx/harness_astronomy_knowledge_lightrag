@@ -17,14 +17,9 @@ function Ensure-PowerSettings {
 function Check-And-Start-Services {
     Ensure-PowerSettings
 
-    # 1. Check Orchestrator
-    $orchProc = Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -like "*orchestrator.py*" }
-    if (-not $orchProc) {
-        Write-Host "[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')] [WATCHDOG] Orchestrator is down! Starting..." -ForegroundColor Yellow
-        Start-Process -FilePath $pythonExe -ArgumentList "src/astronomy_lightrag/harness/orchestrator.py" -WorkingDirectory $projectRoot -WindowStyle Hidden
-    } else {
-        Write-Host "[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')] [WATCHDOG] Orchestrator is running (PID: $($orchProc.ProcessId))" -ForegroundColor Green
-    }
+    # 1. Check Orchestrator (Disabled: 155/155 books ingestion is 100% completed)
+    # Orchestrator is only needed when there are remaining uningested books.
+    Write-Host "[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')] [WATCHDOG] All 155 books ingestion completed. Orchestrator inactive." -ForegroundColor Cyan
 
     # 2. Check Dashboard Server
     $dashProc = Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -like "*dashboard/server.py*" }

@@ -333,14 +333,15 @@ class FullScaleOrchestrator:
         logger.info(
             f"\n🎉 Orchestrator run completed! Processed {processed_count} books in {total_elapsed_all}."
         )
-        await send_notification(
-            "天文学知识库摄取任务收官",
-            f"**本次运行完成**: {processed_count} 本书\n"
-            f"**总运行时长**: {total_elapsed_all}\n"
-            f"**累计消耗 Token**: {self.tracker.usage_summary().get('monthly_tokens', 0):,}\n"
-            f"全部指定批次书籍已成功归档入库！",
-            msg_type="success"
-        )
+        if processed_count > 0:
+            await send_notification(
+                "天文学知识库摄取任务收官",
+                f"**本次运行完成**: {processed_count} 本书\n"
+                f"**总运行时长**: {total_elapsed_all}\n"
+                f"**累计消耗 Token**: {self.tracker.usage_summary().get('monthly_tokens', 0):,}\n"
+                f"全部指定批次书籍已成功归档入库！",
+                msg_type="success"
+            )
 
     def _update_ingest_state_file(self, doc_id: str, meta: Dict[str, Any]):
         """Updates ingest_state.json for dashboard live status."""
